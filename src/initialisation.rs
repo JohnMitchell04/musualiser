@@ -15,8 +15,36 @@ use imgui_winit_support::{
     WinitPlatform
 };
 use raw_window_handle::HasRawWindowHandle;
+use imgui::Context;
 
-pub fn create_window() -> (EventLoop<()>, Window, Surface<WindowSurface>, PossiblyCurrentContext) {
+pub struct Application {
+    pub event_loop: EventLoop<()>,
+    pub window: Window,
+    pub surface: Surface<WindowSurface>,
+    pub context: PossiblyCurrentContext,
+    pub winit_platform: WinitPlatform,
+    pub imgui_context: Context,
+    pub ig_renderer: imgui_glow_renderer::AutoRenderer
+}
+
+pub fn initialise_appplication() -> Application {
+    // Create the window and other components to be used by our application
+    let (event_loop, window, surface, context) = create_window();
+
+    // Initialise imgui for our window
+    let (winit_platform, mut imgui_context) = imgui_init(&window);
+
+    // Get the OpenGL context from glow
+    let glow = glow_context(&context);
+
+    // Initialise the imgui renderer
+    let ig_renderer = imgui_glow_renderer::AutoRenderer::initialize(glow, &mut imgui_context)
+        .expect("Failed to create renderer");
+
+    Application {event_loop, window, surface, context, winit_platform, imgui_context, ig_renderer}
+}
+
+fn create_window() -> (EventLoop<()>, Window, Surface<WindowSurface>, PossiblyCurrentContext) {
     // Create a new event loop
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
 
@@ -66,8 +94,8 @@ pub fn create_window() -> (EventLoop<()>, Window, Surface<WindowSurface>, Possib
     (event_loop, window, surface, context)
 }
 
-pub fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
-    // Cretae the imgui context
+fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
+    // Create the imgui context
     let mut imgui_context = imgui::Context::create();
     imgui_context.set_ini_filename(None);
 
@@ -82,7 +110,7 @@ pub fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
     (winit_platform, imgui_context)
 }
 
-pub fn glow_context(context: &PossiblyCurrentContext) -> glow::Context {
+fn glow_context(context: &PossiblyCurrentContext) -> glow::Context {
     unsafe {
         glow::Context::from_loader_function_cstr(|s| context.display().get_proc_address(s).cast())
     }
