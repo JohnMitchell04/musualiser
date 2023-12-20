@@ -1,21 +1,23 @@
-use std::num::NonZeroU32;
+use std::{ time::Instant, num::NonZeroU32 };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
     display::{ GetGlDisplay, GlDisplay },
-    surface::{ Surface, SurfaceAttributesBuilder, WindowSurface }
+    surface::{ Surface, SurfaceAttributesBuilder, WindowSurface, GlSurface }
 };
+use glow::HasContext;
 use imgui_winit_support::{
     winit::{
         event_loop::EventLoop,
         window::WindowBuilder,
         dpi::LogicalSize,
         window::Window,
+        event
     },
     WinitPlatform
 };
 use raw_window_handle::HasRawWindowHandle;
-use imgui::Context;
+use imgui::{Context, Ui};
 
 pub struct Application {
     pub event_loop: EventLoop<()>,
@@ -25,6 +27,77 @@ pub struct Application {
     pub winit_platform: WinitPlatform,
     pub imgui_context: Context,
     pub ig_renderer: imgui_glow_renderer::AutoRenderer
+}
+
+impl Application {
+    pub fn main_loop<F: FnMut(&mut bool, &mut Ui)>(self, mut run_ui: F) {
+        let Application {
+            event_loop,
+            window,
+            surface,
+            context,
+            mut winit_platform,
+            mut imgui_context,
+            mut ig_renderer
+        } = self;
+        let mut last_frame = Instant::now();
+
+        // Start the event loop
+        event_loop.run(move |event, window_target| {
+            match event {
+                // For any event we update the imgui context with the new time and update the last frame
+                event::Event::NewEvents(_) => {
+                    let now = Instant::now();
+                    imgui_context.io_mut().update_delta_time(now.duration_since(last_frame));
+                    last_frame = now;
+                }
+                // If we are about to do nothing, request a redraw
+                event::Event::AboutToWait => {
+                    let _ = winit_platform
+                        .prepare_frame(imgui_context.io_mut(), &window)
+                        .expect("Failed to prepare frame");
+                    window.request_redraw();
+                }
+                // When a redraw is requested
+                event::Event::WindowEvent { event: event::WindowEvent::RedrawRequested, .. } => {
+                    // Clear the colour buffer
+                    unsafe { ig_renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
+
+                    // Get the UI and run the passed UI
+                    let ui = imgui_context.frame();
+                    let mut run = true;
+                    run_ui(&mut run, ui);
+                    if !run {
+                        window_target.exit();
+                    }
+
+                    // Prepare the render on winit 
+                    winit_platform.prepare_render(ui, &window);
+                    let draw_data = imgui_context.render();
+
+                    // Tell imgui to render
+                    ig_renderer.render(draw_data).expect("Error rendering imgui");
+                    surface.swap_buffers(&context).expect("Failed to swap buffers");
+                }
+                event::Event::WindowEvent { event: event::WindowEvent::CloseRequested, .. } => {
+                    window_target.exit();
+                }
+                event::Event::WindowEvent { event: event::WindowEvent::Resized(new_size), .. } => {
+                    if new_size.width > 0 && new_size.height > 0 {
+                        surface.resize(
+                            &context,
+                            NonZeroU32::new(new_size.width).unwrap(),
+                            NonZeroU32::new(new_size.height).unwrap()
+                        );
+                    }
+                    winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                }
+                event => {
+                    winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                }
+            }  
+        }).expect("Event loop error");
+    }
 }
 
 pub fn initialise_appplication() -> Application {
