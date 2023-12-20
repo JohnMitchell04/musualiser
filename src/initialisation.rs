@@ -19,6 +19,7 @@ use imgui_winit_support::{
 use raw_window_handle::HasRawWindowHandle;
 use imgui::{Context, Ui};
 
+// Struct holding all necessary information about our application
 pub struct Application {
     pub event_loop: EventLoop<()>,
     pub window: Window,
@@ -30,6 +31,7 @@ pub struct Application {
 }
 
 impl Application {
+    // Main event loop that takes a customisable UI function
     pub fn main_loop<F: FnMut(&mut bool, &mut Ui)>(self, mut run_ui: F) {
         let Application {
             event_loop,
@@ -45,7 +47,7 @@ impl Application {
         // Start the event loop
         event_loop.run(move |event, window_target| {
             match event {
-                // For any event we update the imgui context with the new time and update the last frame
+                // For all events we update the imgui context with the new time and update the last frame
                 event::Event::NewEvents(_) => {
                     let now = Instant::now();
                     imgui_context.io_mut().update_delta_time(now.duration_since(last_frame));
@@ -73,15 +75,19 @@ impl Application {
 
                     // Prepare the render on winit 
                     winit_platform.prepare_render(ui, &window);
+
+                    // Render the imgui scene and return the draw data
                     let draw_data = imgui_context.render();
 
-                    // Tell imgui to render
+                    // Tell the renderer to draw the imgui data
                     ig_renderer.render(draw_data).expect("Error rendering imgui");
                     surface.swap_buffers(&context).expect("Failed to swap buffers");
                 }
+                // Exit when requested
                 event::Event::WindowEvent { event: event::WindowEvent::CloseRequested, .. } => {
                     window_target.exit();
                 }
+                // When resize is requested, ensure everything is done correctly
                 event::Event::WindowEvent { event: event::WindowEvent::Resized(new_size), .. } => {
                     if new_size.width > 0 && new_size.height > 0 {
                         surface.resize(
@@ -92,6 +98,7 @@ impl Application {
                     }
                     winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
                 }
+                // Other events do not affect us and can be passed to winit
                 event => {
                     winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
                 }

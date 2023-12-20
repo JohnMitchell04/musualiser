@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::BufReader,
-    sync::Arc,
+    sync::{ Arc, Mutex },
     time::Duration
 };
 use rodio::{Decoder, OutputStream, source::Source, Sink};
@@ -11,7 +11,7 @@ mod initialisation;
 
 struct FftFilter<I> {
     input: I,
-    vector: Arc<Vec<f32>>
+    vector: Arc<Mutex<Vec<f32>>>
 }
 
 impl<I> FftFilter<I> {
@@ -40,6 +40,9 @@ where I: Source<Item = f32>, {
             None => return None,
             Some(s) => s,
         };
+
+        let mut data = (*self.vector).lock().unwrap();
+        data.push(sample);
 
         Some(sample)
     }
@@ -70,7 +73,7 @@ where I: Source<Item = f32>, {
     }
 }
 
-fn fft_filter<I>(input: I, vector: Arc<Vec<f32>>) -> FftFilter<I>
+fn fft_filter<I>(input: I, vector: Arc<Mutex<Vec<f32>>>) -> FftFilter<I>
 where I: Source<Item = f32>, {
     FftFilter { input, vector }
 } 
@@ -83,7 +86,8 @@ fn main() {
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
     let samples = Vec::new();
-    let shared_samples = Arc::new(samples);
+    let mutex = Mutex::new(samples);
+    let shared_samples = Arc::new(mutex);
     
     // Load file
     let file = BufReader::new(File::open("./test/titanium-170190.mp3").unwrap());
