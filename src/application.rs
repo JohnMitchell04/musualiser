@@ -1,4 +1,4 @@
-use std::{ time::Instant, num::NonZeroU32 };
+use std::{ rc::Rc, time::Instant, num::NonZeroU32 };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
@@ -104,6 +104,10 @@ impl Application {
                 }
             }  
         }).expect("Event loop error");
+    }
+
+    pub fn glow_context(&self) -> Rc<glow::Context> {
+        self.ig_renderer.gl_context().clone()
     }
 }
 

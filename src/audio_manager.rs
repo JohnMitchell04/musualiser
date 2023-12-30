@@ -49,7 +49,7 @@ where I: Source<Item = f32>, {
 
         self.counter += 1;
 
-        // If we have enough samples to perform an fft, then do so
+        // If we have enough samples to perform an FFT, then do so
         if self.counter / self.input.channels() == (self.input.sample_rate() / 60) as u16 {
             // Perform FFT and place into our output vector
             self.perform_fft();
@@ -143,8 +143,6 @@ impl AudioManager {
 
         // Plan FFT
         let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 60) as usize);
-
-        println!("{}", source.sample_rate());
 
         // Add FFT filter and add to sink
         let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
