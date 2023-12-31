@@ -100,12 +100,16 @@ where I: Source<Item = f32>, {
     pub fn perform_fft(&mut self) {
         // Aquire lock for output data
         let mut lock = self.output_vector.lock().unwrap();
+        let data = &mut *lock;
 
         // Copy internal data into output vector to perform FFT in place
-        *lock = self.internal_vector.clone();
+        *data = self.internal_vector.clone();
 
         // Process data
-        self.filter.process(&mut (*lock));
+        self.filter.process(data);
+
+        // Only the second half of the data is needed after the FFT
+        data.drain((data.len() / 2)..data.len());
     }
 }
 

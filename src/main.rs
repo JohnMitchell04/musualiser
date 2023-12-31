@@ -23,15 +23,11 @@ fn main() {
     let fft_renderer = fft_renderer::FftRenderer::new(app.glow_context(), shared_samples, textures);
 
     app.main_loop(fft_renderer, move |_, ui, fft_renderer| {
-        ui.show_demo_window(&mut true);
-        ui.window("Test Texture")
-            .size([400.0, 400.0], imgui::Condition::FirstUseEver)
-            .build(|| {
-                ui.text("Hello textures!");
-                ui.text("Some generated texture");
-                fft_renderer.render_fft();
-                imgui::Image::new(fft_renderer.get_texture_id(), [100.0, 100.0]).build(ui);
-            });
+        ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
+            let window_size = ui.content_region_avail();
+            fft_renderer.render_fft(window_size);
+            imgui::Image::new(fft_renderer.get_texture_id(), window_size).build(ui);
+        });
 
         if ui.is_key_pressed(Key::Space) {
             if !audio_manager.is_paused() {
@@ -40,25 +36,5 @@ fn main() {
                 audio_manager.play();
             }
         }
-
-        // // If an FFT has been calculated, display it
-        // let mut lock = shared_samples.lock().unwrap();
-        // if !(*lock).is_empty() {
-        //     // Normalise data
-        //     let mut normalised: Vec<f64> = (*lock)
-        //         .iter()
-        //         .map(|x| (x.norm() as f64 / (*lock).len() as f64))
-        //         .collect();
-
-        //     // Scale data between 0 and 1
-        //     let largest = normalised.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        //     normalised = normalised.iter().map(|x| (x / largest)).collect();
-
-        //     // Draw data
-
-
-        //     // Clear output vector
-        //     (*lock).clear();
-        // }
     });
 }
