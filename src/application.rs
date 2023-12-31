@@ -17,22 +17,25 @@ use imgui_winit_support::{
     WinitPlatform
 };
 use raw_window_handle::HasRawWindowHandle;
-use imgui::{Context, Ui};
+use imgui::Ui;
+
+use crate::fft_renderer;
 
 // Struct holding all necessary information about our application
 pub struct Application {
-    pub event_loop: EventLoop<()>,
-    pub window: Window,
-    pub surface: Surface<WindowSurface>,
-    pub context: PossiblyCurrentContext,
-    pub winit_platform: WinitPlatform,
-    pub imgui_context: Context,
-    pub ig_renderer: imgui_glow_renderer::AutoRenderer
+    event_loop: EventLoop<()>,
+    window: Window,
+    surface: Surface<WindowSurface>,
+    context: PossiblyCurrentContext,
+    winit_platform: WinitPlatform,
+    imgui_context: imgui::Context,
+    glow_context: Rc<glow::Context>,
+    ig_renderer: imgui_glow_renderer::Renderer
 }
 
 impl Application {
     // Main event loop that takes a customisable UI function
-    pub fn main_loop<F: FnMut(&mut bool, &mut Ui)>(self, mut run_ui: F) {
+    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer)>(self, mut fft_renderer: fft_renderer::FftRenderer, mut run_ui: F) {
         let Application {
             event_loop,
             window,
@@ -40,6 +43,7 @@ impl Application {
             context,
             mut winit_platform,
             mut imgui_context,
+            glow_context,
             mut ig_renderer
         } = self;
         let mut last_frame = Instant::now();
@@ -63,12 +67,12 @@ impl Application {
                 // When a redraw is requested
                 event::Event::WindowEvent { event: event::WindowEvent::RedrawRequested, .. } => {
                     // Clear the colour buffer
-                    unsafe { ig_renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
+                    unsafe { glow_context.clear(glow::COLOR_BUFFER_BIT) };
 
                     // Get the UI and run the passed UI
                     let ui = imgui_context.frame();
                     let mut run = true;
-                    run_ui(&mut run, ui);
+                    run_ui(&mut run, ui, &mut fft_renderer);
                     if !run {
                         window_target.exit();
                     }
@@ -80,7 +84,7 @@ impl Application {
                     let draw_data = imgui_context.render();
 
                     // Tell the renderer to draw the imgui data
-                    ig_renderer.render(draw_data).expect("Error rendering imgui");
+                    ig_renderer.render::<imgui::Textures<glow::Texture>>(&glow_context, fft_renderer.get_textures(), draw_data).expect("Error rendering imgui");
                     surface.swap_buffers(&context).expect("Failed to swap buffers");
                 }
                 // Exit when requested
@@ -107,7 +111,7 @@ impl Application {
     }
 
     pub fn glow_context(&self) -> Rc<glow::Context> {
-        self.ig_renderer.gl_context().clone()
+        self.glow_context.clone()
     }
 }
 
@@ -119,13 +123,23 @@ pub fn initialise_appplication() -> Application {
     let (winit_platform, mut imgui_context) = imgui_init(&window);
 
     // Get the OpenGL context from glow
-    let glow = glow_context(&context);
+    let glow_context = Rc::new(glow_context(&context));
+
+    // Enable sRGB support
+    unsafe { glow_context.enable(glow::FRAMEBUFFER_SRGB); }
+
+    // Create texture mapping
+    let mut textures = imgui::Textures::<glow::Texture>::default();
 
     // Initialise the imgui renderer
-    let ig_renderer = imgui_glow_renderer::AutoRenderer::initialize(glow, &mut imgui_context)
-        .expect("Failed to create renderer");
+    let ig_renderer = imgui_glow_renderer::Renderer::initialize(
+        &glow_context,
+        &mut imgui_context, 
+        &mut textures, 
+        false
+    ).expect("Failed to create renderer");
 
-    Application {event_loop, window, surface, context, winit_platform, imgui_context, ig_renderer}
+    Application {event_loop, window, surface, context, winit_platform, imgui_context, glow_context, ig_renderer }
 }
 
 fn create_window() -> (EventLoop<()>, Window, Surface<WindowSurface>, PossiblyCurrentContext) {

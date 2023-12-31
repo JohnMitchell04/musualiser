@@ -1,9 +1,8 @@
-use std::{ fs::File, sync::{ Arc, Mutex} };
-use glow::HasContext;
-use imgui::Key;
+use std::{ fs::File, sync::{ Arc, Mutex}, rc::Rc };
 
 mod application;
 mod audio_manager;
+mod fft_renderer;
 
 fn main() {
     // Create our application
@@ -21,58 +20,17 @@ fn main() {
     //audio_manager.add_song(song);
     //audio_manager.play();
 
-    let mut textures = imgui::Textures::<glow::Texture>::default();
+    let fft_renderer = fft_renderer::FftRenderer::new(app.glow_context(), shared_samples);
 
-    let width = 100;
-    let height = 100;
-
-    let mut data = Vec::with_capacity(width * height);
-    for i in 0..width {
-        for j in 0..height {
-            data.push(i as u8);
-            data.push(j as u8);
-            data.push((i + j) as u8);
-        }
-    }
-
-    let gl = app.glow_context();
-    let texture = unsafe { gl.create_texture() }.expect("Unable to create GL texture");
-
-    unsafe {
-        gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D, 
-            glow::TEXTURE_MIN_FILTER, 
-            glow::LINEAR as _
-        );
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_MAG_FILTER,
-            glow::LINEAR as _,
-        );
-        gl.tex_image_2d(
-            glow::TEXTURE_2D,
-            0,
-            glow::RGB as _,
-            width as _,
-            height as _,
-            0,
-            glow::RGB,
-            glow::UNSIGNED_BYTE,
-            Some(&data),
-        )
-    }
-
-    let id = textures.insert(texture);
-
-    app.main_loop(move |_, ui| {
+    app.main_loop(fft_renderer, move |_, ui, fft_renderer| {
         //ui.show_demo_window(&mut true);
         ui.window("Test Texture")
             .size([400.0, 400.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 ui.text("Hello textures!");
                 ui.text("Some generated texture");
-                imgui::Image::new(id, [100.0, 100.0]).build(ui);
+                fft_renderer.render_fft();
+                imgui::Image::new(fft_renderer.get_texture_id(), [100.0, 100.0]).build(ui);
             });
 
         // if ui.is_key_pressed(Key::Space) {
