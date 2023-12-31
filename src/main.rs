@@ -1,4 +1,4 @@
-use std::{ fs::File, sync::{ Arc, Mutex}, rc::Rc };
+use std::{ fs::File, sync::{ Arc, Mutex} };
 
 mod application;
 mod audio_manager;
@@ -6,7 +6,7 @@ mod fft_renderer;
 
 fn main() {
     // Create our application
-    let app = application::initialise_appplication();
+    let (app, textures) = application::initialise_appplication();
 
     let samples = Vec::new();
     let mutex = Mutex::new(samples);
@@ -20,10 +20,10 @@ fn main() {
     //audio_manager.add_song(song);
     //audio_manager.play();
 
-    let fft_renderer = fft_renderer::FftRenderer::new(app.glow_context(), shared_samples);
+    let fft_renderer = fft_renderer::FftRenderer::new(app.glow_context(), shared_samples, textures);
 
     app.main_loop(fft_renderer, move |_, ui, fft_renderer| {
-        //ui.show_demo_window(&mut true);
+        ui.show_demo_window(&mut true);
         ui.window("Test Texture")
             .size([400.0, 400.0], imgui::Condition::FirstUseEver)
             .build(|| {

@@ -10,7 +10,7 @@ pub struct FftRenderer {
 }
 
 impl FftRenderer {
-    pub fn new(glow_context: Rc<glow::Context>, input_data: Arc<Mutex<Vec<Complex<f32>>>>) -> Self {
+    pub fn new(glow_context: Rc<glow::Context>, input_data: Arc<Mutex<Vec<Complex<f32>>>>, mut textures: imgui::Textures<glow::Texture>) -> Self {
         // Create dummy initial texture
         let width = 1;
         let height = 1;
@@ -51,7 +51,6 @@ impl FftRenderer {
             )
         }
 
-        let mut textures = imgui::Textures::<glow::Texture>::default();
         let texture_id = textures.insert(texture);
 
         FftRenderer { glow_context, input_data, textures, texture_id }

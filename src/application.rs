@@ -115,7 +115,7 @@ impl Application {
     }
 }
 
-pub fn initialise_appplication() -> Application {
+pub fn initialise_appplication() -> (Application, imgui::Textures<glow::Texture>) {
     // Create the window and other components to be used by our application
     let (event_loop, window, surface, context) = create_window();
 
@@ -139,7 +139,7 @@ pub fn initialise_appplication() -> Application {
         false
     ).expect("Failed to create renderer");
 
-    Application {event_loop, window, surface, context, winit_platform, imgui_context, glow_context, ig_renderer }
+    (Application {event_loop, window, surface, context, winit_platform, imgui_context, glow_context, ig_renderer }, textures)
 }
 
 fn create_window() -> (EventLoop<()>, Window, Surface<WindowSurface>, PossiblyCurrentContext) {
