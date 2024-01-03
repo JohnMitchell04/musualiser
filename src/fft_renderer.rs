@@ -24,9 +24,10 @@ impl FftRenderer {
 
     pub fn render_fft(&mut self, size: [f32; 2]) {
         // If we are still waiting on the next FFT, don't calculate a new display
-        let lock = self.input_data.lock().unwrap();
-        let data = &(*lock);
+        let mut lock = self.input_data.lock().unwrap();
         if (*lock).is_empty() { return; }
+
+        let data = &mut (*lock);
 
         // Normalise data
         let mut normalised: Vec<f64> = data.iter().map(|x| (x.norm() as f64 / data.len() as f64)).collect();
@@ -42,14 +43,16 @@ impl FftRenderer {
         let bar_width = (width as f64 / normalised.len() as f64).floor() as usize;
 
         // Draw black background
-        let mut data = Vec::with_capacity(width * height);
+        let mut draw_data = Vec::with_capacity(width * height);
         for _i in 0..width {
             for _j in 0..height {
-                data.push(0);
-                data.push(0);
-                data.push(0);
+                draw_data.push(0);
+                draw_data.push(0);
+                draw_data.push(0);
             }
         }
+
+        // TODO: I believe that (need to check): Currently the scale of frequencies changes per FFT, make sure it is constant
 
         // Draw FFT over background
         for (index, frequency) in normalised.iter().enumerate() {
@@ -57,19 +60,17 @@ impl FftRenderer {
             let bar_height = (height as f64 * frequency).round() as usize;
 
             for i in 0..bar_width {
-                // x coordinate
-                let x = (index * bar_width + i) * width;
+                let x = ((index * bar_width) + i) * 3;
+
                 for j in 0..bar_height {
-                    // y coordinate
-                    let y = height - j;
+                    let y = (height - (j + 1)) * width * 3;
 
                     // Draw bar as white
-                    data[y + x] = 255;
-                    data[y + x + 1] = 255;
-                    data[y + x + 2] = 255;
+                    draw_data[y + x] = 255;
+                    draw_data[y + x + 1] = 255;
+                    draw_data[y + x + 2] = 255;
                 }
             }
-
         }
     
         let texture = unsafe { self.glow_context.create_texture() }.expect("Unable to create GL texture");
@@ -95,7 +96,7 @@ impl FftRenderer {
                 0,
                 glow::RGB,
                 glow::UNSIGNED_BYTE,
-                Some(&data),
+                Some(&draw_data),
             )
         }
 
