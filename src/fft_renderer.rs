@@ -65,8 +65,8 @@ impl FftRenderer {
 
     pub fn render_fft(&mut self) {
         // Dimensions
-        let width = self.current_size[0].floor() as usize;
-        let height = self.current_size[1].floor() as usize;
+        let width = self.current_size[0] as usize;
+        let height = self.current_size[1] as usize;
 
         // Draw black background
         let mut draw_data = Vec::with_capacity(width * height); // Not sure why this isn't muliplied by 3
@@ -106,9 +106,12 @@ impl FftRenderer {
         }
     
         let texture = unsafe { self.glow_context.create_texture() }.expect("Unable to create GL texture");
+
+        // TODO: Look into using tex_sub_image_2d - should be more efficient
     
         unsafe {
             self.glow_context.bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.glow_context.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
             self.glow_context.tex_parameter_i32(
                 glow::TEXTURE_2D, 
                 glow::TEXTURE_MIN_FILTER, 
@@ -129,7 +132,7 @@ impl FftRenderer {
                 glow::RGB,
                 glow::UNSIGNED_BYTE,
                 Some(&draw_data),
-            )
+            );
         }
 
         self.textures.replace(self.texture_id, texture);
