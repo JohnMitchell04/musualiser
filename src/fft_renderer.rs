@@ -5,8 +5,10 @@ use rustfft::num_complex::Complex;
 pub struct FftRenderer {
     glow_context: Rc<glow::Context>,
     input_data: Arc<Mutex<Vec<Complex<f32>>>>,
+    current_render_data: Vec<f64>,
     textures: imgui::Textures<glow::Texture>,
-    texture_id: imgui::TextureId
+    texture_id: imgui::TextureId,
+    current_size: [f32; 2]
 }
 
 impl FftRenderer {
@@ -18,32 +20,56 @@ impl FftRenderer {
         // Create and add dummy initial texture
         let texture = unsafe { glow_context.create_texture() }.expect("Unable to create GL texture");
         let texture_id = textures.insert(texture);
+        let current_size = [0.0, 0.0];
+        let current_render_data = Vec::new();
 
-        FftRenderer { glow_context, input_data, textures, texture_id }
+        FftRenderer { glow_context, input_data, current_render_data, textures, texture_id, current_size }
     }
 
-    pub fn render_fft(&mut self, size: [f32; 2]) {
-        // If we are still waiting on the next FFT, don't calculate a new display
+    pub fn render(&mut self, size: [f32; 2]) {
         let mut lock = self.input_data.lock().unwrap();
-        if (*lock).is_empty() { return; }
+        if !(*lock).is_empty() { 
+            // Update internal data
+            let data = &mut (*lock);
 
-        let data = &mut (*lock);
+            // Calculate modulus of complex data
+            self.current_render_data = data.iter()
+                .map(|x| (x.norm() as f64 / self.current_render_data.len() as f64))
+                .collect();
 
-        // Normalise data
-        let mut normalised: Vec<f64> = data.iter().map(|x| (x.norm() as f64 / data.len() as f64)).collect();
+            // FFT can now be processed, so clear data and release lock
+            data.clear();
+            drop(lock);
 
-        // Scale data between 0 and 1
-        let largest = normalised.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        normalised = normalised.iter().map(|x| (x / largest)).collect();
+            // Scale data between 0 and 1
+            let largest = self.current_render_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+            self.current_render_data = self.current_render_data.iter().map(|x| (x / largest)).collect();
 
-        // Calculate data used in the rendering
-        let width = size[0].floor() as usize;
-        let height = size[1].floor() as usize;
+            // Update size just in case
+            self.current_size = size;
 
-        let bar_width = (width as f64 / normalised.len() as f64).floor() as usize;
+            // Render
+            self.render_fft();
+        }
+        else if size != self.current_size {
+            // Don't need the lock so it can be released
+            drop(lock);
+
+            // Update size
+            self.current_size = size;
+
+            // Render
+            self.render_fft();
+        }
+    }
+
+    pub fn render_fft(&mut self) {
+        // Dimensions
+        let width = self.current_size[0].floor() as usize;
+        let height = self.current_size[1].floor() as usize;
 
         // Draw black background
-        let mut draw_data = Vec::with_capacity(width * height);
+        let mut draw_data = Vec::with_capacity(width * height); // Not sure why this isn't muliplied by 3
         for _i in 0..width {
             for _j in 0..height {
                 draw_data.push(0);
@@ -52,23 +78,29 @@ impl FftRenderer {
             }
         }
 
-        // TODO: I believe that (need to check): Currently the scale of frequencies changes per FFT, make sure it is constant
+        // In case this render is being performed before first FFT has been calculated
+        if !self.current_render_data.is_empty() {
+            // Calculate width of each bar
+            let bar_width = width / self.current_render_data.len();
 
-        // Draw FFT over background
-        for (index, frequency) in normalised.iter().enumerate() {
-            // Calculate bar height
-            let bar_height = (height as f64 * frequency).round() as usize;
+            // TODO: I believe that (need to check): Currently the scale of frequencies changes per FFT, make sure it is constant
 
-            for i in 0..bar_width {
-                let x = ((index * bar_width) + i) * 3;
+            // Draw FFT over background
+            for (index, frequency) in self.current_render_data.iter().enumerate() {
+                // Calculate bar height
+                let bar_height = (height as f64 * frequency).round() as usize;
 
-                for j in 0..bar_height {
-                    let y = (height - (j + 1)) * width * 3;
+                for i in 0..bar_width {
+                    let x = ((index * bar_width) + i) * 3;
 
-                    // Draw bar as white
-                    draw_data[y + x] = 255;
-                    draw_data[y + x + 1] = 255;
-                    draw_data[y + x + 2] = 255;
+                    for j in 0..bar_height {
+                        let y = (height - (j + 1)) * width * 3;
+
+                        // Draw bar as white
+                        draw_data[y + x] = 255;
+                        draw_data[y + x + 1] = 255;
+                        draw_data[y + x + 2] = 255;
+                    }
                 }
             }
         }
@@ -101,9 +133,6 @@ impl FftRenderer {
         }
 
         self.textures.replace(self.texture_id, texture);
-
-        // Clear FFT data for next time
-        data.clear();
     }
 
     pub fn get_textures(&self) -> &imgui::Textures<glow::Texture> {

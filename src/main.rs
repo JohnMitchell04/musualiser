@@ -25,7 +25,7 @@ fn main() {
     app.main_loop(fft_renderer, move |_, ui, fft_renderer| {
         ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
             let window_size = ui.content_region_avail();
-            fft_renderer.render_fft(window_size);
+            fft_renderer.render(window_size);
             imgui::Image::new(fft_renderer.get_texture_id(), window_size).build(ui);
         });
 
