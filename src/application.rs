@@ -19,7 +19,7 @@ use imgui_winit_support::{
 use raw_window_handle::HasRawWindowHandle;
 use imgui::Ui;
 
-use crate::fft_renderer;
+use crate::{fft_renderer, audio_manager};
 
 // Struct holding all necessary information about our application
 pub struct Application {
@@ -35,7 +35,8 @@ pub struct Application {
 
 impl Application {
     // Main event loop that takes a customisable UI function
-    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer)>(self, mut fft_renderer: fft_renderer::FftRenderer, mut run_ui: F) {
+    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer, &mut audio_manager::AudioManager)>
+    (self, mut fft_renderer: fft_renderer::FftRenderer, mut audio_manager: audio_manager::AudioManager, mut run_ui: F) {
         let Application {
             event_loop,
             window,
@@ -72,7 +73,7 @@ impl Application {
                     // Get the UI and run the passed UI
                     let ui = imgui_context.frame();
                     let mut run = true;
-                    run_ui(&mut run, ui, &mut fft_renderer);
+                    run_ui(&mut run, ui, &mut fft_renderer, &mut audio_manager);
                     if !run {
                         window_target.exit();
                     }

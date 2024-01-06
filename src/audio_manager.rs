@@ -2,10 +2,11 @@ use std::{
     fs::File,
     io::BufReader,
     sync::{ Arc, Mutex },
-    time::Duration
+    time::Duration, path::PathBuf
 };
 use rodio::{Decoder, OutputStream, source::Source, Sink, OutputStreamHandle};
 use rustfft::{FftPlanner, num_complex::Complex, Fft};
+use rfd::FileDialog;
 
 struct FftFilter<I> {
     input: I,
@@ -50,7 +51,7 @@ where I: Source<Item = f32>, {
         self.counter += 1;
 
         // If we have enough samples to perform an FFT, then do so
-        if self.counter / self.input.channels() == (self.input.sample_rate() / 60) as u16 {
+        if self.counter / self.input.channels() == (self.input.sample_rate() / 30) as u16 {
             // Perform FFT and place into our output vector
             self.perform_fft();
 
@@ -109,16 +110,18 @@ where I: Source<Item = f32>, {
         self.filter.process(data);
 
         // Only the second half of the data is needed after the FFT
-        data.drain((data.len() / 2)..data.len());
+        data.drain(0..(data.len() / 2));
     }
 }
 
 pub struct AudioManager {
     sink: Sink,
     _stream: OutputStream,
-    stream_handle: OutputStreamHandle,
+    _stream_handle: OutputStreamHandle,
     sample_destination: Arc<Mutex<Vec<Complex<f32>>>>,
-    fft_planner: FftPlanner<f32>
+    fft_planner: FftPlanner<f32>,
+    currently_playing: String,
+    selected_songs: Vec<PathBuf>
 }
 
 impl AudioManager {
@@ -132,25 +135,46 @@ impl AudioManager {
         // Create FFT planner
         let fft_planner = FftPlanner::new();
 
-        AudioManager { sink, _stream, stream_handle, sample_destination, fft_planner }
+        let currently_playing = String::from("");
+        let selected_songs = Vec::new();
+
+        AudioManager { 
+            sink,
+            _stream,
+            _stream_handle: stream_handle,
+            sample_destination,
+            fft_planner,
+            currently_playing,
+            selected_songs
+        }
     }
 
-    pub fn add_song(&mut self, song: File) {
-        // Read song file
-        let reader = BufReader::new(song);
+    pub fn select_songs(&mut self) {
+        // TODO: Deal with errors this could throw
+        self.selected_songs = FileDialog::new()
+            .add_filter("audio", &["mp3", "wav", ])
+            .set_directory("/")
+            .pick_files()
+            .unwrap();
+    }
 
-        // Decode file, make pausable and convert samples
-        let source = Decoder::new(reader)
-            .unwrap()
-            .pausable(false)
-            .convert_samples();
+    pub fn selected_songs(&self) -> Vec<&str> {
+        self.selected_songs.iter().map(|path| { path.to_str().unwrap() }).collect()
+    }
 
-        // Plan FFT
-        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 60) as usize);
+    pub fn update_current_song(&mut self, song: &str, index: usize) {
+        // Already playing
+        if song == self.currently_playing { return }
 
-        // Add FFT filter and add to sink
-        let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
-        self.sink.append(filter);
+        // Changing song, so clear current song
+        self.sink.clear();
+
+        // Add new song
+        let file = File::open(&self.selected_songs[index]).unwrap();
+
+        // TODO: Deal with errors
+
+        self.add_song(file);
     }
 
     pub fn clear_queue(&mut self) {
@@ -167,6 +191,24 @@ impl AudioManager {
 
     pub fn play(&mut self) {
         self.sink.play();
+    }
+
+    fn add_song(&mut self, song: File) {
+        // Read song file
+        let reader = BufReader::new(song);
+
+        // Decode file, make pausable and convert samples
+        let source = Decoder::new(reader)
+            .unwrap()
+            .pausable(false)
+            .convert_samples();
+
+        // Plan FFT
+        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 30) as usize);
+
+        // Add FFT filter and add to sink
+        let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
+        self.sink.append(filter);
     }
 }
 
