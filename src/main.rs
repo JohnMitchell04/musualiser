@@ -1,4 +1,4 @@
-use std::{ fs::File, sync::{ Arc, Mutex}, borrow::Cow };
+use std::{ sync::{ Arc, Mutex}, borrow::Cow };
 use imgui::Key;
 
 mod application;
@@ -28,8 +28,8 @@ fn main() {
             let window_size = ui.content_region_avail();
 
             // Function to create labels from items in list box
-            fn label_function<'b>(item: &'b &str) -> Cow<'b, str> {
-                Cow::from(*item)
+            fn label_function<'b>(item: &'b String) -> Cow<'b, str> {
+                Cow::from(item.as_str())
             }
 
             ui.text("Songs");
@@ -52,7 +52,9 @@ fn main() {
             width_specifier.end();
 
             // Update the current song if needed
-            audio_manager.update_current_song(items[selected_item], selected_item);
+            if items.len() != 0 {
+                audio_manager.update_current_song(items[selected_item].as_str(), selected_item);
+            }
 
             if ui.button_with_size("Select Songs", [window_size[0], 10.0]) {
                 audio_manager.select_songs();

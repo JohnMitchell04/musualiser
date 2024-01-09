@@ -158,13 +158,13 @@ impl AudioManager {
             .unwrap();
     }
 
-    pub fn selected_songs(&self) -> Vec<&str> {
-        self.selected_songs.iter().map(|path| { path.to_str().unwrap() }).collect()
+    pub fn selected_songs(&self) -> Vec<String> {
+        self.selected_songs.iter().map(|path| { String::from(path.to_str().unwrap()) }).collect()
     }
 
     pub fn update_current_song(&mut self, song: &str, index: usize) {
         // Already playing
-        if song == self.currently_playing { return }
+        if *song == self.currently_playing { return }
 
         // Changing song, so clear current song
         self.sink.clear();
