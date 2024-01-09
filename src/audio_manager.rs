@@ -121,7 +121,8 @@ pub struct AudioManager {
     sample_destination: Arc<Mutex<Vec<Complex<f32>>>>,
     fft_planner: FftPlanner<f32>,
     currently_playing: String,
-    selected_songs: Vec<PathBuf>
+    selected_songs: Vec<PathBuf>,
+    selected_song_idx: usize
 }
 
 impl AudioManager {
@@ -137,6 +138,7 @@ impl AudioManager {
 
         let currently_playing = String::from("");
         let selected_songs = Vec::new();
+        let selected_song_idx = 0;
 
         AudioManager { 
             sink,
@@ -145,7 +147,8 @@ impl AudioManager {
             sample_destination,
             fft_planner,
             currently_playing,
-            selected_songs
+            selected_songs,
+            selected_song_idx
         }
     }
 
@@ -162,12 +165,18 @@ impl AudioManager {
         self.selected_songs.iter().map(|path| { String::from(path.to_str().unwrap()) }).collect()
     }
 
-    pub fn update_current_song(&mut self, song: &str, index: usize) {
+    pub fn selected_song_index(&self) -> usize {
+        self.selected_song_idx
+    }
+
+    pub fn update_current_song(&mut self, song: &String, index: usize) {
         // Already playing
         if *song == self.currently_playing { return }
 
-        // Changing song, so clear current song
-        self.sink.clear();
+        // Changing song, so clear sink and update currently playing
+        self.clear_queue();
+        self.currently_playing = song.clone();
+        self.selected_song_idx = index;
 
         // Add new song
         let file = File::open(&self.selected_songs[index]).unwrap();
@@ -175,6 +184,7 @@ impl AudioManager {
         // TODO: Deal with errors
 
         self.add_song(file);
+        self.play();
     }
 
     pub fn clear_queue(&mut self) {

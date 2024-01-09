@@ -39,7 +39,7 @@ fn main() {
 
             // Add all the opened songs
             let items = audio_manager.selected_songs();
-            let mut selected_item = 0;
+            let mut selected_item = audio_manager.selected_song_index();
 
             // Create list box
             imgui::ListBox::build_simple(
@@ -51,9 +51,9 @@ fn main() {
             );
             width_specifier.end();
 
-            // Update the current song if needed
+            // Update the current song
             if items.len() != 0 {
-                audio_manager.update_current_song(items[selected_item].as_str(), selected_item);
+                audio_manager.update_current_song(&items[selected_item], selected_item);
             }
 
             if ui.button_with_size("Select Songs", [window_size[0], 10.0]) {
