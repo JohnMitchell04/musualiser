@@ -90,11 +90,13 @@ impl FftRenderer {
                 // Calculate bar height
                 let bar_height = (height as f64 * frequency).round() as usize;
 
-                for i in 0..bar_width {
+                // Not sure why it must start from 1 and 2 for the height
+                // but it prevents a white bar at the top and side
+                for i in 1..bar_width {
                     let x = ((index * bar_width) + i) * 3;
 
-                    for j in 0..bar_height {
-                        let y = (height - (j + 1)) * width * 3;
+                    for j in 2..bar_height {
+                        let y = (height - j) * width * 3;
 
                         // Draw bar as white
                         draw_data[y + x] = 255;
@@ -120,7 +122,7 @@ impl FftRenderer {
             self.glow_context.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_MAG_FILTER,
-                glow::LINEAR as _,
+                glow::LINEAR as _
             );
             self.glow_context.tex_image_2d(
                 glow::TEXTURE_2D,
@@ -131,7 +133,7 @@ impl FftRenderer {
                 0,
                 glow::RGB,
                 glow::UNSIGNED_BYTE,
-                Some(&draw_data),
+                Some(&draw_data)
             );
         }
 
