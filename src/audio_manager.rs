@@ -109,8 +109,27 @@ where I: Source<Item = f32>, {
         // Process data
         self.filter.process(data);
 
-        // Only the second half of the data is needed after the FFT
-        data.drain(0..(data.len() / 2));
+        // Only the first half of the data is needed after the FFT
+        data.drain((data.len() / 2)..data.len());
+
+        // We are only interested in audible frequencies, so remove inaudible ones
+        let mut i = 0;
+        let mut fr = 0.0;
+        let step = self.sample_rate() as f64 / data.len() as f64;
+
+        // Remove the lower end inaudible frequencies
+        while fr < 20.0 {
+            fr = i as f64 * step;
+            i += 1;
+        }
+        data.drain(0..i);
+
+        // Remove upper end inaudible frequencies
+        while fr < 20000.0 {
+            fr = i as f64 * step;
+            i += 1;
+        }
+        data.drain(i..data.len());
     }
 }
 
