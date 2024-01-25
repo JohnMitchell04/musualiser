@@ -11,7 +11,7 @@ use rfd::FileDialog;
 struct FftFilter<I> {
     input: I,
     internal_vector: Vec<Complex<f32>>,
-    output_vector: Arc<Mutex<Vec<Complex<f32>>>>,
+    output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     counter: u16,
     filter: Arc<dyn Fft<f32>>
 }
@@ -51,7 +51,7 @@ where I: Source<Item = f32>, {
         self.counter += 1;
 
         // If we have enough samples to perform an FFT, then do so
-        if self.counter / self.input.channels() == (self.input.sample_rate() / 30) as u16 {
+        if self.counter / self.input.channels() == (self.input.sample_rate() / 15) as u16 {
             // Perform FFT and place into our output vector
             self.perform_fft();
 
@@ -91,7 +91,7 @@ where I: Source<Item = f32>, {
 
 impl <I> FftFilter<I>
 where I: Source<Item = f32>, {
-    pub fn new(input: I, output_vector: Arc<Mutex<Vec<Complex<f32>>>>, filter: Arc<dyn Fft<f32>>) -> Self {
+    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, filter: Arc<dyn Fft<f32>>) -> Self {
         let counter: u16 = 0;
         let internal_vector = Vec::new();
 
@@ -99,37 +99,27 @@ where I: Source<Item = f32>, {
     }
 
     pub fn perform_fft(&mut self) {
+        // Process data
+        self.filter.process(&mut self.internal_vector);
+
+        // Only the first half of the data is needed after the FFT
+        self.internal_vector.drain((self.internal_vector.len() / 2)..self.internal_vector.len());
+        
+        // Calculate the frequency for each bin
+        let step = self.sample_rate() as f64 / self.internal_vector.len() as f64;
+        let mut transformed_data = Vec::new();
+        for (index, amp) in self.internal_vector.iter().enumerate() {
+            let fr = index as f64 * step;
+            transformed_data.push((*amp, fr));
+        }
+
+        // Remove inaudible frequencies
+        transformed_data.retain(|&x| x.1 > 20.0 && x.1 < 20000.0);
+
         // Aquire lock for output data
         let mut lock = self.output_vector.lock().unwrap();
         let data = &mut *lock;
-
-        // Copy internal data into output vector to perform FFT in place
-        *data = self.internal_vector.clone();
-
-        // Process data
-        self.filter.process(data);
-
-        // Only the first half of the data is needed after the FFT
-        data.drain((data.len() / 2)..data.len());
-
-        // We are only interested in audible frequencies, so remove inaudible ones
-        let mut i = 0;
-        let mut fr = 0.0;
-        let step = self.sample_rate() as f64 / data.len() as f64;
-
-        // Remove the lower end inaudible frequencies
-        while fr < 20.0 {
-            fr = i as f64 * step;
-            i += 1;
-        }
-        data.drain(0..i);
-
-        // Remove upper end inaudible frequencies
-        while fr < 20000.0 {
-            fr = i as f64 * step;
-            i += 1;
-        }
-        data.drain(i..data.len());
+        *data = transformed_data.clone();
     }
 }
 
@@ -137,7 +127,7 @@ pub struct AudioManager {
     sink: Sink,
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
-    sample_destination: Arc<Mutex<Vec<Complex<f32>>>>,
+    sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     fft_planner: FftPlanner<f32>,
     currently_playing: String,
     selected_songs: Vec<PathBuf>,
@@ -145,7 +135,7 @@ pub struct AudioManager {
 }
 
 impl AudioManager {
-    pub fn new(sample_destination: Arc<Mutex<Vec<Complex<f32>>>>) -> Self {
+    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>) -> Self {
         // Try to get the default sound device
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
@@ -233,7 +223,7 @@ impl AudioManager {
             .convert_samples();
 
         // Plan FFT
-        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 30) as usize);
+        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 15) as usize);
 
         // Add FFT filter and add to sink
         let filter = FftFilter::new(source, self.sample_destination.clone(), fft);

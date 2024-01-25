@@ -4,7 +4,7 @@ use rustfft::num_complex::Complex;
 
 pub struct FftRenderer {
     glow_context: Rc<glow::Context>,
-    input_data: Arc<Mutex<Vec<Complex<f32>>>>,
+    input_data: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     current_render_data: Vec<f64>,
     textures: imgui::Textures<glow::Texture>,
     texture_id: imgui::TextureId,
@@ -14,7 +14,7 @@ pub struct FftRenderer {
 impl FftRenderer {
     pub fn new(
         glow_context: Rc<glow::Context>,
-        input_data: Arc<Mutex<Vec<Complex<f32>>>>,
+        input_data: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
         mut textures: imgui::Textures<glow::Texture>
     ) -> Self {
         // Create and add dummy initial texture
@@ -32,18 +32,33 @@ impl FftRenderer {
             // Update internal data
             let data = &mut (*lock);
 
-            // Calculate modulus of complex data
-            self.current_render_data = data.iter()
-                .map(|x| (x.norm() as f64 / self.current_render_data.len() as f64))
-                .collect();
+            // Calculate the mel of each frequency
+            let mel_data: Vec<(Complex<f32>, f64)> = data.iter().map(|&x| (x.0, 1127.0 * (1.0 + x.1 / 700.0).ln())).collect();
 
-            // FFT can now be processed, so clear data and release lock
+            // Lock is no longer needed
             data.clear();
             drop(lock);
 
+            // Average data into arbitrary number of 100 chunks
+            let mel_diff = (mel_data.last().unwrap().1 - mel_data.first().unwrap().1) / 100.0;
+            let mut i = 0;
+            let mut j = 0;
+            let mut averaged_data = Vec::new();
+            while i < mel_data.len() {
+                let mut sum = 0.0;
+
+                while j < mel_data.len() && mel_data[j].1 < mel_data[i].1 + mel_diff  {
+                    sum += mel_data[j].0.norm();
+                    j += 1;
+                }
+
+                averaged_data.push(sum as f64 / (j - i) as f64);
+                i = j;
+            }
+
             // Scale data between 0 and 1
-            let largest = self.current_render_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-            self.current_render_data = self.current_render_data.iter().map(|x| (x / largest)).collect();
+            let largest = averaged_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+            self.current_render_data = averaged_data.iter().map(|x| (x / largest)).collect();
 
             // Update size just in case
             self.current_size = size;
@@ -78,6 +93,19 @@ impl FftRenderer {
             }
         }
 
+        // // In case this render is being performed before first FFT has been calculated
+        // if !self.current_render_data.is_empty() {
+        //     // Average data
+        //     // Potetially do in powers of 2
+
+        //     // Calculate difference table
+
+        //     // Interpolate for each x value
+
+        //     // TODO: Potentially make line thicker
+        // }
+
+        ///////////////////// OLD IMPLEMENTATION /////////////////////
         // In case this render is being performed before first FFT has been calculated
         if !self.current_render_data.is_empty() {
             // Calculate width of each bar
