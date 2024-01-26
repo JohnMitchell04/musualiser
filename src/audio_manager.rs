@@ -130,7 +130,7 @@ pub struct AudioManager {
     sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     fft_planner: FftPlanner<f32>,
     currently_playing: String,
-    selected_songs: Vec<PathBuf>,
+    opened_songs: Vec<PathBuf>,
     selected_song_idx: usize
 }
 
@@ -156,22 +156,22 @@ impl AudioManager {
             sample_destination,
             fft_planner,
             currently_playing,
-            selected_songs,
+            opened_songs: selected_songs,
             selected_song_idx
         }
     }
 
-    pub fn select_songs(&mut self) {
+    pub fn open_songs(&mut self) {
         // TODO: Deal with errors this could throw
-        self.selected_songs = FileDialog::new()
+        self.opened_songs = FileDialog::new()
             .add_filter("audio", &["mp3", "wav", ])
             .set_directory("/")
             .pick_files()
             .unwrap();
     }
 
-    pub fn selected_songs(&self) -> Vec<String> {
-        self.selected_songs.iter().map(|path| { String::from(path.to_str().unwrap()) }).collect()
+    pub fn opened_songs(&self) -> Vec<String> {
+        self.opened_songs.iter().map(|path| { String::from(path.to_str().unwrap()) }).collect()
     }
 
     pub fn selected_song_index(&self) -> usize {
@@ -188,7 +188,7 @@ impl AudioManager {
         self.selected_song_idx = index;
 
         // Add new song
-        let file = File::open(&self.selected_songs[index]).unwrap();
+        let file = File::open(&self.opened_songs[index]).unwrap();
 
         // TODO: Deal with errors
 
