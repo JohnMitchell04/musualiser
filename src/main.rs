@@ -1,4 +1,4 @@
-use std::{ sync::{ Arc, Mutex}, borrow::Cow };
+use std::borrow::Cow;
 use imgui::{Key, Ui};
 
 mod application;
@@ -7,22 +7,19 @@ mod fft_renderer;
 
 fn main() {
     // Initialise app and helpers
-    let (app, textures) = application::initialise_appplication();
-    let shared_samples = Arc::new(Mutex::new(Vec::new())); // TODO: Look into removing
-    let audio_manager = audio_manager::AudioManager::new(shared_samples.clone());
-    let fft_renderer = fft_renderer::FftRenderer::new(app.glow_context(), shared_samples, textures);
+    let app = application::Application::new();
 
     // Run app
-    app.main_loop(fft_renderer, audio_manager, application_loop);
+    app.main_loop(application_loop);
 }
 
 /// Function passed to the main application loop detailing the UI
 ///
 /// # Arguments
 ///
-/// * `ui` - The ImGui UI class that allows creating the UI
-/// * `renderer` - The FFT Renderer class that creates the visualisation from audio data 
-/// * `audio_manager` - The Audio Manager class that handles playing audio
+/// * `ui` - Is the ImGui UI class that allows creating the UI
+/// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data 
+/// * `audio_manager` - Is the Audio Manager class that handles playing audio
 fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
     // Window for displaying the visualisation
     ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
@@ -44,13 +41,7 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
         // Build list box
         fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }
         let window_size = ui.content_region_avail();
-        imgui::ListBox::build_simple(
-            list_box,
-            ui,
-            &mut selected_item,
-            &items,
-            &label_function
-        );
+        imgui::ListBox::build_simple(list_box, ui, &mut selected_item, &items, &label_function);
 
         width_specifier.end();
 
