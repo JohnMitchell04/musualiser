@@ -18,7 +18,9 @@ fn main() {
 /// # Arguments
 ///
 /// * `ui` - Is the ImGui UI class that allows creating the UI
+/// 
 /// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data 
+/// 
 /// * `audio_manager` - Is the Audio Manager class that handles playing audio
 fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
     // Window for displaying the visualisation
