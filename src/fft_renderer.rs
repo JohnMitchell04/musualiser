@@ -2,7 +2,7 @@ use std::{ rc::Rc, sync::{ Arc, Mutex }};
 use glow::HasContext;
 use rustfft::num_complex::Complex;
 
-/// Holds all necessary information for the visualisation renderer
+/// Holds all necessary information for the visualisation renderer.
 pub struct FftRenderer {
     glow_context: Rc<glow::Context>,
     input_data: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
@@ -46,7 +46,7 @@ impl FftRenderer {
             // Calculate the mel of each frequency
             let mel_data: Vec<(Complex<f32>, f64)> = data.iter().map(|&x| (x.0, 1127.0 * (1.0 + x.1 / 700.0).ln())).collect();
 
-            // Lock is no longer needed
+            // Clear the data as it is now old and uneeded
             data.clear();
             drop(lock);
 
@@ -75,9 +75,7 @@ impl FftRenderer {
             self.current_size = size;
             self.render_fft();
         } else if size != self.current_size {
-            // Don't need the lock so it can be released
             drop(lock);
-
             self.current_size = size;
             self.render_fft();
         }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use imgui::{Key, Ui};
+use rfd::FileDialog;
 
 mod application;
 mod audio_manager;
@@ -13,15 +14,15 @@ fn main() {
     app.main_loop(application_loop);
 }
 
-/// Function passed to the main application loop detailing the UI
+/// Function passed to the main application loop detailing the UI.
 ///
 /// # Arguments
 ///
-/// * `ui` - Is the ImGui UI class that allows creating the UI
+/// * `ui` - Is the ImGui UI class that provides access to UI widgets and functions.
 /// 
-/// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data 
+/// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data .
 /// 
-/// * `audio_manager` - Is the Audio Manager class that handles playing audio
+/// * `audio_manager` - Is the Audio Manager class that handles playing audio.
 fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
     // Window for displaying the visualisation
     ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
@@ -30,7 +31,7 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
         imgui::Image::new(renderer.get_texture_id(), window_size).build(ui);
     });
 
-    // Window or controlling currently selected and open songs
+    // Window for controlling currently selected and open songs
     ui.window("Songs").size([200.0, 200.0], imgui::Condition::FirstUseEver).build(|| {
         ui.text("Songs");
         let width_specifier = ui.push_item_width(-1.0);
@@ -49,12 +50,19 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
 
         // Update the current song
         if items.len() != 0 {
-            audio_manager.update_current_song(&items[selected_item], selected_item);
+            audio_manager.change_current_song(selected_item);
         }
 
-        // Add songs
+        // Open file dialogue for the user to select a song
         if ui.button_with_size("Select Songs", [window_size[0], 10.0]) {
-            audio_manager.open_songs();
+            // TODO: Deal with errors this could throw
+            let opened_songs = FileDialog::new()
+                .add_filter("audio", &["mp3", "wav", ])
+                .set_directory("/")
+                .pick_files()
+                .unwrap();
+
+            audio_manager.update_open_songs(opened_songs);
         }
     });
 

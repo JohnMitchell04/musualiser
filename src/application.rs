@@ -21,7 +21,7 @@ use imgui::Ui;
 
 use crate::{fft_renderer, audio_manager};
 
-// Holds all necessary information about our application
+/// Holds all necessary information about our application.
 pub struct Application {
     event_loop: EventLoop<()>,
     window: Window,

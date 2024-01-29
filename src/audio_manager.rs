@@ -1,13 +1,8 @@
-use std::{
-    fs::File,
-    io::BufReader,
-    sync::{ Arc, Mutex },
-    time::Duration, path::PathBuf
-};
-use rodio::{Decoder, OutputStream, source::Source, Sink, OutputStreamHandle};
-use rustfft::{FftPlanner, num_complex::Complex, Fft};
-use rfd::FileDialog;
+use std::{ fs::File, io::BufReader, sync::{ Arc, Mutex }, time::Duration, path::PathBuf };
+use rodio::{ Decoder, OutputStream, source::Source, Sink, OutputStreamHandle };
+use rustfft::{ FftPlanner, num_complex::Complex, Fft };
 
+/// Holds all information needed for the FFT.
 struct FftFilter<I> {
     input: I,
     internal_vector: Vec<Complex<f32>>,
@@ -37,6 +32,7 @@ impl<I> Iterator for FftFilter<I>
 where I: Source<Item = f32>, {
     type Item = f32;
 
+    /// Handle each sample in the audio data and perform an FFT when enough samples have been collected.
     fn next(&mut self) -> Option<f32> {
         let sample = match self.input.next() {
             None => return None,
@@ -55,7 +51,6 @@ where I: Source<Item = f32>, {
             // Perform FFT and place into our output vector
             self.perform_fft();
 
-            // Reset counter and vector
             self.internal_vector.clear();
             self.counter = 0;
         }
@@ -70,6 +65,7 @@ where I: Source<Item = f32>, {
 
 impl<I> ExactSizeIterator for FftFilter<I> where I: Source<Item = f32> + ExactSizeIterator {}
 
+// Required for rodio Sink
 impl<I> Source for FftFilter<I>
 where I: Source<Item = f32>, {
     fn current_frame_len(&self) -> Option<usize> {
@@ -91,6 +87,7 @@ where I: Source<Item = f32>, {
 
 impl <I> FftFilter<I>
 where I: Source<Item = f32>, {
+    /// Return a new FFT filter.
     pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, filter: Arc<dyn Fft<f32>>) -> Self {
         let counter: u16 = 0;
         let internal_vector = Vec::new();
@@ -98,11 +95,10 @@ where I: Source<Item = f32>, {
         FftFilter { input, internal_vector, output_vector, counter, filter }
     }
 
+    /// Performs the FFT on the internal vector and places the result into the output vector.
     pub fn perform_fft(&mut self) {
-        // Process data
+        // Perform FFT
         self.filter.process(&mut self.internal_vector);
-
-        // Only the first half of the data is needed after the FFT
         self.internal_vector.drain((self.internal_vector.len() / 2)..self.internal_vector.len());
         
         // Calculate the frequency for each bin
@@ -116,78 +112,67 @@ where I: Source<Item = f32>, {
         // Remove inaudible frequencies
         transformed_data.retain(|&x| x.1 > 20.0 && x.1 < 20000.0);
 
-        // Aquire lock for output data
         let mut lock = self.output_vector.lock().unwrap();
         let data = &mut *lock;
         *data = transformed_data.clone();
     }
 }
 
+/// Holds all necessary information for the audio manager.
 pub struct AudioManager {
     sink: Sink,
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
     sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     fft_planner: FftPlanner<f32>,
-    currently_playing: String,
     opened_songs: Vec<PathBuf>,
     selected_song_idx: usize
 }
 
 impl AudioManager {
+    /// Initialises and creates a new audio manager.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `sample_destination`- Is the thread safe vector to place processed FFT data into,
     pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>) -> Self {
-        // Try to get the default sound device
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let (_stream, stream_handle) = OutputStream::try_default().expect("Failed to get audio output device: ");
+        let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink: ");
 
-        // Create sink
-        let sink = Sink::try_new(&stream_handle).unwrap();
-
-        // Create FFT planner
         let fft_planner = FftPlanner::new();
+        let opened_songs = Vec::new();
+        let selected_song_idx = usize::MAX;
 
-        let currently_playing = String::from("");
-        let selected_songs = Vec::new();
-        let selected_song_idx = 0;
-
-        AudioManager { 
-            sink,
-            _stream,
-            _stream_handle: stream_handle,
-            sample_destination,
-            fft_planner,
-            currently_playing,
-            opened_songs: selected_songs,
-            selected_song_idx
-        }
+        AudioManager { sink, _stream, _stream_handle: stream_handle, sample_destination, fft_planner, opened_songs, selected_song_idx }
     }
 
-    pub fn open_songs(&mut self) {
-        // TODO: Deal with errors this could throw
-        self.opened_songs = FileDialog::new()
-            .add_filter("audio", &["mp3", "wav", ])
-            .set_directory("/")
-            .pick_files()
-            .unwrap();
+    /// Update list of currently opened songs.
+    pub fn update_open_songs(&mut self, opened_songs: Vec<PathBuf>) {
+        self.opened_songs = opened_songs;
     }
 
+    /// Returns the vector of songs that have been opened.
     pub fn opened_songs(&self) -> Vec<String> {
         self.opened_songs.iter().map(|path| { String::from(path.to_str().unwrap()) }).collect()
     }
 
+    /// Returns the currently playing song index.
     pub fn selected_song_index(&self) -> usize {
         self.selected_song_idx
     }
 
-    pub fn update_current_song(&mut self, song: &String, index: usize) {
-        // Already playing
-        if *song == self.currently_playing { return }
+    /// Chnage the currently selected song. Will open and play the new audio.
+    /// 
+    /// # Arguments
+    ///
+    /// * `index` - Is the index of the song to change to.
+    pub fn change_current_song(&mut self, index: usize) {
+        if index == self.selected_song_idx { return }
 
         // Changing song, so clear sink and update currently playing
         self.clear_queue();
-        self.currently_playing = song.clone();
         self.selected_song_idx = index;
 
-        // Add new song
         let file = File::open(&self.opened_songs[index]).unwrap();
 
         // TODO: Deal with errors
@@ -196,38 +181,43 @@ impl AudioManager {
         self.play();
     }
 
+    /// Clears all audio in the current sink.
     pub fn clear_queue(&mut self) {
         self.sink.clear();
     }
 
+    /// Returns whether the sink is paused.
     pub fn is_paused(&mut self) -> bool {
         self.sink.is_paused()
     }
 
+    /// Pauses the audio sink.
     pub fn pause(&mut self) {
         self.sink.pause();
     }
 
+    /// Plays the audio sink.
     pub fn play(&mut self) {
         self.sink.play();
     }
 
+    /// Adds a specified audio file to the audio manager, while applying necessary filters and converting data.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `song` - Is the file object of the audio being added.
     fn add_song(&mut self, song: File) {
-        // Read song file
         let reader = BufReader::new(song);
-
-        // Decode file, make pausable and convert samples
         let source = Decoder::new(reader)
             .unwrap()
             .pausable(false)
             .convert_samples();
 
-        // Plan FFT
+        // Plan FFT algorithm to use
         let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 15) as usize);
 
-        // Add FFT filter and add to sink
+        // Apply FFT filter to song and add to sink
         let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
         self.sink.append(filter);
     }
 }
-
