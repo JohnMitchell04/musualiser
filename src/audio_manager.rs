@@ -8,6 +8,7 @@ struct FftFilter<I> {
     internal_vector: Vec<Complex<f32>>,
     output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     counter: u16,
+    fft_frequency: u8,
     filter: Arc<dyn Fft<f32>>
 }
 
@@ -47,12 +48,12 @@ where I: Source<Item = f32>, {
         self.counter += 1;
 
         // If we have enough samples to perform an FFT, then do so
-        if self.counter / self.input.channels() == (self.input.sample_rate() / 15) as u16 {
+        if self.internal_vector.len() == (self.input.sample_rate() / self.fft_frequency as u32) as usize {
             // Perform FFT and place into our output vector
             self.perform_fft();
 
-            self.internal_vector.clear();
-            self.counter = 0;
+            self.internal_vector.drain(0..self.internal_vector.len() / 4);
+            self.counter = self.internal_vector.len() as u16;
         }
 
         Some(sample)
@@ -88,23 +89,36 @@ where I: Source<Item = f32>, {
 impl <I> FftFilter<I>
 where I: Source<Item = f32>, {
     /// Return a new FFT filter.
-    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, filter: Arc<dyn Fft<f32>>) -> Self {
+    /// 
+    /// # Arguments
+    /// 
+    /// * `input` - Is the audio source to perform the FFT on.
+    /// 
+    /// * `output_vector` - Is the thread safe vector to place processed FFT data into.
+    /// 
+    /// * `filter` - Is the FFT algorithm to use.
+    /// 
+    /// * `fft_frequency` - Is the time per second to perform the FFT.
+    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, filter: Arc<dyn Fft<f32>>, fft_frequency: u8) -> Self {
         let counter: u16 = 0;
         let internal_vector = Vec::new();
 
-        FftFilter { input, internal_vector, output_vector, counter, filter }
+        FftFilter { input, internal_vector, output_vector, counter, fft_frequency, filter }
     }
 
     /// Performs the FFT on the internal vector and places the result into the output vector.
     pub fn perform_fft(&mut self) {
+        // Copy data into temporary array for FFT process
+        let mut temp = self.internal_vector.clone();
+
         // Perform FFT
-        self.filter.process(&mut self.internal_vector);
-        self.internal_vector.drain((self.internal_vector.len() / 2)..self.internal_vector.len());
+        self.filter.process(&mut temp);
+        temp.drain((temp.len() / 2)..temp.len());
         
         // Calculate the frequency for each bin
-        let step = self.sample_rate() as f64 / self.internal_vector.len() as f64;
+        let step = self.sample_rate() as f64 / temp.len() as f64;
         let mut transformed_data = Vec::new();
-        for (index, amp) in self.internal_vector.iter().enumerate() {
+        for (index, amp) in temp.iter().enumerate() {
             let fr = index as f64 * step;
             transformed_data.push((*amp, fr));
         }
@@ -125,6 +139,7 @@ pub struct AudioManager {
     _stream_handle: OutputStreamHandle,
     sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
     fft_planner: FftPlanner<f32>,
+    fft_frequency: u8,
     opened_songs: Vec<PathBuf>,
     selected_song_idx: usize
 }
@@ -135,7 +150,7 @@ impl AudioManager {
     /// # Arguments
     /// 
     /// * `sample_destination`- Is the thread safe vector to place processed FFT data into,
-    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>) -> Self {
+    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, fft_frequency: u8) -> Self {
         let (_stream, stream_handle) = OutputStream::try_default().expect("Failed to get audio output device: ");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink: ");
 
@@ -143,7 +158,7 @@ impl AudioManager {
         let opened_songs = Vec::new();
         let selected_song_idx = usize::MAX;
 
-        AudioManager { sink, _stream, _stream_handle: stream_handle, sample_destination, fft_planner, opened_songs, selected_song_idx }
+        AudioManager { sink, _stream, _stream_handle: stream_handle, sample_destination, fft_planner, fft_frequency, opened_songs, selected_song_idx }
     }
 
     /// Update list of currently opened songs.
@@ -214,10 +229,10 @@ impl AudioManager {
             .convert_samples();
 
         // Plan FFT algorithm to use
-        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / 15) as usize);
+        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / self.fft_frequency as u32) as usize);
 
         // Apply FFT filter to song and add to sink
-        let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
+        let filter = FftFilter::new(source, self.sample_destination.clone(), fft, self.fft_frequency);
         self.sink.append(filter);
     }
 }

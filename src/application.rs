@@ -52,7 +52,7 @@ impl Application {
 
         let shared_samples = Arc::new(Mutex::new(Vec::new())); // TODO: Look into removing
         let visualisation_renderer = fft_renderer::FftRenderer::new(glow_context.clone(), shared_samples.clone(), textures);
-        let audio_manager = audio_manager::AudioManager::new(shared_samples.clone());
+        let audio_manager = audio_manager::AudioManager::new(shared_samples.clone(), 5);
 
         Application { event_loop, window, surface, context, winit_platform, imgui_context, glow_context, ig_renderer, visualisation_renderer, audio_manager }
     }
@@ -190,7 +190,7 @@ impl Application {
     fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
         // Create the imgui context
         let mut imgui_context = imgui::Context::create();
-        imgui_context.set_ini_filename(None); // TODO: Add support for ini
+        imgui_context.set_ini_filename(None); // TODO: Add support for ini files
 
         // Initialise the ImGui winit platform backend
         let mut winit_platform = WinitPlatform::init(&mut imgui_context);
