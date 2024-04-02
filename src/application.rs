@@ -1,4 +1,4 @@
-use std::{ sync::{ Arc, Mutex}, rc::Rc, time::Instant, num::NonZeroU32 };
+use std::{ sync::{ Arc, Mutex}, time::Instant, num::NonZeroU32 };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
@@ -29,8 +29,8 @@ pub struct Application {
     context: PossiblyCurrentContext,
     winit_platform: WinitPlatform,
     imgui_context: imgui::Context,
-    glow_context: Rc<glow::Context>,
-    ig_renderer: imgui_glow_renderer::Renderer,
+    // glow_context: glow::Context,
+    ig_renderer: imgui_glow_renderer::AutoRenderer,
     visualisation_renderer: fft_renderer::FftRenderer,
     audio_manager: audio_manager::AudioManager
 }
@@ -40,21 +40,17 @@ impl Application {
     pub fn new() -> Self {
         let (event_loop, window, surface, context) = Self::create_window();
         let (winit_platform, mut imgui_context) = Self::imgui_init(&window);
-        let glow_context = Rc::new(Self::glow_context(&context));
+        let glow_context = Self::glow_context(&context);
 
-        // Enable sRGB support
-        unsafe { glow_context.enable(glow::FRAMEBUFFER_SRGB); }
-
-        // Initialise provided ImGui renderer with texture mapping
-        let mut textures = imgui::Textures::<glow::Texture>::default();
-        let ig_renderer = imgui_glow_renderer::Renderer::initialize(&glow_context, &mut imgui_context, &mut textures, false)
+        // Initialise provided ImGui renderer
+        let ig_renderer = imgui_glow_renderer::AutoRenderer::initialize(glow_context, &mut imgui_context)
             .expect("Failed to create ImGui renderer: ");
 
-        let shared_samples = Arc::new(Mutex::new(Vec::new())); // TODO: Look into removing
-        let visualisation_renderer = fft_renderer::FftRenderer::new(glow_context.clone(), shared_samples.clone(), textures);
+        let shared_samples = Arc::new(Mutex::new(Vec::new()));
+        let visualisation_renderer = fft_renderer::FftRenderer::new(shared_samples.clone());
         let audio_manager = audio_manager::AudioManager::new(shared_samples.clone(), 5);
 
-        Application { event_loop, window, surface, context, winit_platform, imgui_context, glow_context, ig_renderer, visualisation_renderer, audio_manager }
+        Application { event_loop, window, surface, context, winit_platform, imgui_context, ig_renderer, visualisation_renderer, audio_manager }
     }
 
     /// Start the main application loop with the provided UI descriptor function.
@@ -68,7 +64,7 @@ impl Application {
             context,
             mut winit_platform,
             mut imgui_context,
-            glow_context,
+            // glow_context,
             mut ig_renderer,
             mut visualisation_renderer,
             mut audio_manager
@@ -91,7 +87,7 @@ impl Application {
                 }
                 // Handle a redraw
                 event::Event::WindowEvent { event: event::WindowEvent::RedrawRequested, .. } => {
-                    unsafe { glow_context.clear(glow::COLOR_BUFFER_BIT) };
+                    unsafe { ig_renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
 
                     let ui = imgui_context.frame();
                     let mut run = true;
@@ -100,11 +96,11 @@ impl Application {
                         window_target.exit();
                     }
 
-                    // Prepare winit backend and create ImGui draw data then render
+                    // // Prepare winit backend and create ImGui draw data then render
                     winit_platform.prepare_render(ui, &window);
                     let draw_data = imgui_context.render();
-                    ig_renderer.render(&glow_context, visualisation_renderer.get_textures(), draw_data).expect("Error rendering imgui");
-                    // TODO: Can potentially recover from this so maybe change away from expect
+                    ig_renderer.render(draw_data).expect("Error rendering imgui");
+                    // // TODO: Can potentially recover from this so maybe change away from expect
                     surface.swap_buffers(&context).expect("Failed to swap buffers: ");
                 }
                 // Exit when requested

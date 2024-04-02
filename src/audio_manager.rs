@@ -6,27 +6,10 @@ use rustfft::{ FftPlanner, num_complex::Complex, Fft };
 struct FftFilter<I> {
     input: I,
     internal_vector: Vec<Complex<f32>>,
-    output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
+    output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
     counter: u16,
     fft_frequency: u8,
     filter: Arc<dyn Fft<f32>>
-}
-
-impl<I> FftFilter<I> {
-    /// Returns a reference to the inner source.
-    pub fn inner(&self) -> &I {
-        &self.input
-    }
-
-    /// Returns a mutable reference to the inner source.
-    pub fn inner_mut(&mut self) -> &mut I {
-        &mut self.input
-    }
-
-    /// Returns the inner source.
-    pub fn into_inner(self) -> I {
-        self.input
-    }
 }
 
 impl<I> Iterator for FftFilter<I>
@@ -99,7 +82,7 @@ where I: Source<Item = f32>, {
     /// * `filter` - Is the FFT algorithm to use.
     /// 
     /// * `fft_frequency` - Is the time per second to perform the FFT.
-    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, filter: Arc<dyn Fft<f32>>, fft_frequency: u8) -> Self {
+    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, filter: Arc<dyn Fft<f32>>, fft_frequency: u8) -> Self {
         let counter: u16 = 0;
         let internal_vector = Vec::new();
 
@@ -116,10 +99,10 @@ where I: Source<Item = f32>, {
         temp.drain((temp.len() / 2)..temp.len());
         
         // Calculate the frequency for each bin
-        let step = self.sample_rate() as f64 / temp.len() as f64;
+        let step = self.sample_rate() as f32 / temp.len() as f32;
         let mut transformed_data = Vec::new();
         for (index, amp) in temp.iter().enumerate() {
-            let fr = index as f64 * step;
+            let fr = index as f32 * step;
             transformed_data.push((*amp, fr));
         }
 
@@ -137,7 +120,7 @@ pub struct AudioManager {
     sink: Sink,
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
-    sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>,
+    sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
     fft_planner: FftPlanner<f32>,
     fft_frequency: u8,
     opened_songs: Vec<PathBuf>,
@@ -150,7 +133,7 @@ impl AudioManager {
     /// # Arguments
     /// 
     /// * `sample_destination`- Is the thread safe vector to place processed FFT data into,
-    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f64)>>>, fft_frequency: u8) -> Self {
+    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, fft_frequency: u8) -> Self {
         let (_stream, stream_handle) = OutputStream::try_default().expect("Failed to get audio output device: ");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink: ");
 

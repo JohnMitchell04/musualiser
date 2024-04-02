@@ -26,9 +26,9 @@ fn main() {
 fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
     // Window for displaying the visualisation
     ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
-        let window_size = ui.content_region_avail();
-        renderer.render(window_size);
-        imgui::Image::new(renderer.get_texture_id(), window_size).build(ui);
+        let fg_draw_list = ui.get_foreground_draw_list();
+        let size = ui.content_region_avail();
+        renderer.render(fg_draw_list, size);
     });
 
     // Window for controlling currently selected and open songs
