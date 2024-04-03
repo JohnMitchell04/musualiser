@@ -1,6 +1,7 @@
 use std::sync::{ Arc, Mutex };
 use rustfft::num_complex::Complex;
 use imgui::{DrawListMut, ImColor32};
+use splines::{Key, Spline};
 
 /// Holds all necessary information for the visualisation renderer.
 pub struct FftRenderer {
@@ -32,12 +33,18 @@ impl FftRenderer {
     /// 
     /// * `size` - Is the size of the render window.
     pub fn render(&mut self, draw_list: DrawListMut<'_>, size: [f32; 2]) {
+        // If the size of the window has changed, the data needs to be recalculated
         if self.current_size != size {
-            // If the size of the window has changed, the data needs to be recalculated
             self.resize(size);
         }
 
-        self.data_preprocess();
+        let lock = self.input_data.lock().unwrap();
+        let data = &*lock;
+        if !data.is_empty() {
+            self.current_render_data = self.preprocess_data(data);
+            self.current_render_data = self.interpolate_data();
+        }
+        drop(lock);
 
         // TODO: Find out why we are not getting 100 chunks
         // TODO: Think about interpolating with splines and then drawing with bezier curves for a smoother visualisation
@@ -127,17 +134,18 @@ impl FftRenderer {
     //     self.textures.replace(self.texture_id, texture);
     // }
 
-    // /// Returns the texture mapping that the visualisation texture is added to.
-    // pub fn get_textures(&self) -> &imgui::Textures<glow::Texture> {
-    //     &self.textures
-    // }
+    /// Resizes the visualisation to fit the new window size.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `size` - Is the new size of the window.
+    fn resize(&mut self, size: [f32; 2]) {
+        let width_factor = size[0] / self.current_size[0];
+        let height_factor = size[1] / self.current_size[1];
 
-    // /// Returns the texture ID of the generated visualisation texture.
-    // pub fn get_texture_id(&self) -> imgui::TextureId {
-    //     self.texture_id
-    // }
-
-    // TODO: Add a resize function for changes in window size, just needs to recalculate height and x coords
+        self.current_render_data = self.current_render_data.iter().map(|x| [x[0] * width_factor, x[1] * height_factor]).collect();
+        self.current_size = size;
+    }
 
     /// Performs necessary preprocessing.
     /// 
@@ -146,13 +154,7 @@ impl FftRenderer {
     /// # Arguments
     /// 
     /// * `lock` - Is the lock on the input data.
-    fn data_preprocess(&mut self) {
-        let lock = self.input_data.lock().unwrap();
-        let data = &*lock;
-        if lock.is_empty() {
-            return;
-        }
-
+    fn preprocess_data(&self, data: &Vec<(Complex<f32>, f32)>) -> Vec<[f32; 2]> {
         let width = self.current_size[0];
         let height = self.current_size[1];
 
@@ -193,51 +195,34 @@ impl FftRenderer {
             final_data.push([x_values[i], processed_data[i]])
         }
 
-        self.current_render_data = final_data.clone();
+        final_data
     }
 
-    /// Resizes the visualisation to fit the new window size.
+    /// Performs an interpolation of the data which is used to create a smooth visualisation.
     /// 
-    /// # Arguments
-    /// 
-    /// * `size` - Is the new size of the window.
-    fn resize(&mut self, size: [f32; 2]) {
-        let width_factor = size[0] / self.current_size[0];
-        let height_factor = size[1] / self.current_size[1];
+    /// The data is interpolated using a Catmull-Rom spline.
+    fn interpolate_data(&self) -> Vec<[f32; 2]> {
+        // Create spline keys
+        let mut keys = Vec::with_capacity(self.current_render_data.len());
+        for value in self.current_render_data.iter() {
+            keys.push(Key::new(value[0], value[1], splines::Interpolation::CatmullRom));
+        }
 
-        self.current_render_data = self.current_render_data.iter().map(|x| [x[0] * width_factor, x[1] * height_factor]).collect();
-        self.current_size = size;
+        // Create spline
+        let spline = Spline::from_vec(keys);
+
+        // Sample spline between each point
+        let mut sampled_data = Vec::with_capacity(self.current_render_data.len() * 2 - 1);
+        for set in self.current_render_data.chunks(2) {
+            let x = set[0][0] + (set[1][0] - set[0][0]) / 2.0;
+            sampled_data.push(set[0]);
+            sampled_data.push([x, match spline.sample(x) {
+                Some(value) => value,
+                None => 0.0
+            }]);
+            sampled_data.push(set[1]);
+        }
+
+        sampled_data
     }
-
-    // /// Returns an interpolation of the data which is used to create a smooth visualisation.
-    // /// 
-    // /// The data is interpolated using a Catmull-Rom spline.
-    // fn data_interpolation(&self) -> Vec<f64> {
-    //     // Get the x values for each data point
-    //     let mut x_values = Vec::with_capacity(self.current_render_data.len());
-    //     let step = self.current_size[0] as f64 / self.current_render_data.len() as f64;
-    //     for i in 0..self.current_render_data.len() {
-    //         x_values.push(step * i as f64);
-    //     }
-
-    //     // Create spline keys
-    //     let mut keys = Vec::with_capacity(self.current_render_data.len());
-    //     for (index, value) in x_values.iter().enumerate() {
-    //         keys.push(Key::new(*value, self.current_render_data[index], splines::Interpolation::CatmullRom));
-    //     }
-
-    //     // Create spline and sample it
-    //     let spline = Spline::from_vec(keys);
-    //     let mut values = Vec::with_capacity(self.current_size[0] as usize);
-    //     for i in 0..self.current_size[0] as usize {
-    //         values.push(match spline.clamped_sample(i as f64) {
-    //             Some(x) => x,
-    //             None => 0.0
-    //         });
-    //     }
-
-    //     //values = values.iter().map(|x| { x * self.current_size[1] as f64 }).collect();
-
-    //     values
-    // }
 }
