@@ -100,7 +100,7 @@ impl Application {
                     winit_platform.prepare_render(ui, &window);
                     let draw_data = imgui_context.render();
                     ig_renderer.render(draw_data).expect("Error rendering imgui");
-                    // // TODO: Can potentially recover from this so maybe change away from expect
+                    // TODO: Can potentially recover from this so maybe change away from expect
                     surface.swap_buffers(&context).expect("Failed to swap buffers: ");
                 }
                 // Exit when requested

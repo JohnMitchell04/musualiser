@@ -32,107 +32,39 @@ impl FftRenderer {
     /// # Arguments
     /// 
     /// * `size` - Is the size of the render window.
-    pub fn render(&mut self, draw_list: DrawListMut<'_>, size: [f32; 2]) {
+    pub fn render(&mut self, draw_list: DrawListMut<'_>, size: [f32; 2], origin: [f32; 2]) {
         // If the size of the window has changed, the data needs to be recalculated
         if self.current_size != size {
             self.resize(size);
         }
 
-        let lock = self.input_data.lock().unwrap();
-        let data = &*lock;
+        let mut lock = self.input_data.lock().unwrap();
+        let data = &mut *lock;
         if !data.is_empty() {
             self.current_render_data = self.preprocess_data(data);
+
+            // Data is no longer needed
+            (*data).clear();
+            drop(lock);
+
             self.current_render_data = self.interpolate_data();
         }
-        drop(lock);
-
-        // TODO: Find out why we are not getting 100 chunks
-        // TODO: Think about interpolating with splines and then drawing with bezier curves for a smoother visualisation
 
         // Draw bezier curves for the visualisation
         for set in self.current_render_data.windows(4).step_by(3) {
             if set.len() < 4 {
                 break;
             }
+
             draw_list.add_bezier_curve(
-                set[0],
-                set[1],
-                set[2],
-                set[3],
+                [origin[0] + set[0][0], origin[1] + set[0][1]],
+                [origin[0] + set[1][0], origin[1] + set[1][1]],
+                [origin[0] + set[2][0], origin[1] + set[2][1]],
+                [origin[0] + set[3][0], origin[1] + set[3][1]],
                 ImColor32::from_rgba(255, 255, 255, 255)
             ).build();
         }
     }
-
-    // /// Create the visualisation for the audio data.
-    // pub fn render_fft(&mut self) {
-    //     let width = self.current_size[0] as usize;
-    //     let height = self.current_size[1] as usize;
-
-    //     // Draw black background
-    //     let mut draw_data = Vec::with_capacity(width * height); // Not sure why this isn't muliplied by 3
-    //     for _i in 0..width {
-    //         for _j in 0..height {
-    //             draw_data.push(0);
-    //             draw_data.push(0);
-    //             draw_data.push(0);
-    //         }
-    //     }
-
-    //     // In case this render is being performed before first FFT has been calculated
-    //     if !self.current_render_data.is_empty() {
-    //         // Draw FFT over background
-    //         for (index, frequency) in self.current_render_data.iter().enumerate() {
-    //             let bar_height = (height as f64 * frequency).floor() as usize;
-
-    //             let x = index * 3;
-                
-    //             // I have no idea why this is out of bounds nor do I understand how this texture stuff works at all
-    //             let test = (bar_height as i32 - 2).clamp(0, height as i32 - 1) as usize;
-
-    //             for j in test..bar_height {
-    //                 let y = (height as i32 - 2 - j as i32).clamp(0, height as i32 - 1) as usize * width * 3;
-
-    //                 // Draw bar as white
-    //                 draw_data[y + x] = 255;
-    //                 draw_data[y + x + 1] = 255;
-    //                 draw_data[y + x + 2] = 255;
-    //             }
-    //         }
-    //     }
-    
-    //     let texture = unsafe { self.glow_context.create_texture() }.expect("Unable to create GL texture: ");
-
-    //     // TODO: Look into using tex_sub_image_2d - should be more efficient
-    
-    //     unsafe {
-    //         self.glow_context.bind_texture(glow::TEXTURE_2D, Some(texture));
-    //         self.glow_context.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
-    //         self.glow_context.tex_parameter_i32(
-    //             glow::TEXTURE_2D, 
-    //             glow::TEXTURE_MIN_FILTER, 
-    //             glow::LINEAR as _
-    //         );
-    //         self.glow_context.tex_parameter_i32(
-    //             glow::TEXTURE_2D,
-    //             glow::TEXTURE_MAG_FILTER,
-    //             glow::LINEAR as _
-    //         );
-    //         self.glow_context.tex_image_2d(
-    //             glow::TEXTURE_2D,
-    //             0,
-    //             glow::RGB as _,
-    //             width as _,
-    //             height as _,
-    //             0,
-    //             glow::RGB,
-    //             glow::UNSIGNED_BYTE,
-    //             Some(&draw_data)
-    //         );
-    //     }
-
-    //     self.textures.replace(self.texture_id, texture);
-    // }
 
     /// Resizes the visualisation to fit the new window size.
     /// 
@@ -162,25 +94,22 @@ impl FftRenderer {
         let mel_data: Vec<(Complex<f32>, f32)> = data.iter().map(|&x| (x.0, 1127.0 * (1.0 + x.1 / 700.0).ln())).collect();
 
         // Average data into arbitrary number of 150 chunks
-        let mel_diff = (mel_data.last().unwrap().1 - mel_data.first().unwrap().1) / 150.0;
-        let mut i = 0;
-        let mut j = 0;
-        let mut averaged_data = Vec::new();
-        while i < mel_data.len() {
+        let per_chunk = mel_data.len() / 150;
+        let mut averaged_data = Vec::with_capacity(150);
+        for chunk in mel_data.chunks(per_chunk) {
             let mut sum = 0.0;
-
-            while j < mel_data.len() && mel_data[j].1 < mel_data[i].1 + mel_diff {
-                sum += mel_data[j].0.norm();
-                j += 1;
+            let mut i = 0;
+            for value in chunk {
+                sum += value.0.norm();
+                i += 1;
             }
 
-            averaged_data.push(sum as f32 / (j - i) as f32);
-            i = j;
+            averaged_data.push(sum as f32 / i as f32);
         }
 
-        // Scale data between 0 and 1 and then scale it to the height of the window
+        // Normalise data between 0 and 1, scale it to the height of the window and invert for visualisation
         let largest = averaged_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        let processed_data: Vec<f32> = averaged_data.iter().map(|x| (x / largest) * height).collect();
+        let processed_data: Vec<f32> = averaged_data.iter().map(|x| height - ((x / largest) * height) - 1 as f32).collect();
 
         // Get x coords of each point
         let mut x_values = Vec::with_capacity(averaged_data.len());
@@ -210,18 +139,32 @@ impl FftRenderer {
 
         // Create spline
         let spline = Spline::from_vec(keys);
+        let mut sampled_data = Vec::with_capacity(self.current_render_data.len() * 3);
 
-        // Sample spline between each point
-        let mut sampled_data = Vec::with_capacity(self.current_render_data.len() * 2 - 1);
-        for set in self.current_render_data.chunks(2) {
-            let x = set[0][0] + (set[1][0] - set[0][0]) / 2.0;
+        // Skip the first and last point during interpolation as it leads to odd behaviour
+        sampled_data.push(self.current_render_data[0]);
+        for set in self.current_render_data.chunks(2).skip(1).rev().skip(1).rev() {
+            if set.len() < 2 {
+                break;
+            }
+
+            let step = (set[1][0] - set[0][0]) / 3.0;
+            let x1 = set[0][0] + step;
+            let x2 = set[0][0] + step * 2.0;
+
+            // Add two interpolations between points to smooth the visualisation
             sampled_data.push(set[0]);
-            sampled_data.push([x, match spline.sample(x) {
+            sampled_data.push([x1, match spline.sample(x1) {
+                Some(value) => value,
+                None => 0.0
+            }]);
+            sampled_data.push([x2, match spline.sample(x2) {
                 Some(value) => value,
                 None => 0.0
             }]);
             sampled_data.push(set[1]);
         }
+        sampled_data.push(*self.current_render_data.last().unwrap());
 
         sampled_data
     }

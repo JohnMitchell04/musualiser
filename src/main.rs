@@ -25,10 +25,11 @@ fn main() {
 /// * `audio_manager` - Is the Audio Manager class that handles playing audio.
 fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
     // Window for displaying the visualisation
-    ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).build(|| {
-        let fg_draw_list = ui.get_foreground_draw_list();
+    ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).title_bar(false).build(|| {
+        let draw_list = ui.get_window_draw_list();
         let size = ui.content_region_avail();
-        renderer.render(fg_draw_list, size);
+        let origin = ui.cursor_screen_pos();
+        renderer.render(draw_list, size, origin);
     });
 
     // Window for controlling currently selected and open songs
