@@ -1,4 +1,4 @@
-use std::{ sync::{ Arc, Mutex}, time::Instant, num::NonZeroU32 };
+use std::{ num::NonZeroU32, path::PathBuf, sync::{ Arc, Mutex}, time::Instant };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
@@ -19,7 +19,7 @@ use imgui_winit_support::{
 use raw_window_handle::HasRawWindowHandle;
 use imgui::Ui;
 
-use crate::{fft_renderer, audio_manager};
+use crate::{fft_renderer, file_audio_manager, app_audio_manager};
 
 /// Holds all necessary information about our application.
 pub struct Application {
@@ -29,10 +29,9 @@ pub struct Application {
     context: PossiblyCurrentContext,
     winit_platform: WinitPlatform,
     imgui_context: imgui::Context,
-    // glow_context: glow::Context,
     ig_renderer: imgui_glow_renderer::AutoRenderer,
     visualisation_renderer: fft_renderer::FftRenderer,
-    audio_manager: audio_manager::AudioManager
+    audio_manager: file_audio_manager::FileAudioManager
 }
 
 impl Application {
@@ -48,7 +47,8 @@ impl Application {
 
         let shared_samples = Arc::new(Mutex::new(Vec::new()));
         let visualisation_renderer = fft_renderer::FftRenderer::new(shared_samples.clone());
-        let audio_manager = audio_manager::AudioManager::new(shared_samples.clone(), 5);
+        let audio_manager = file_audio_manager::FileAudioManager::new(shared_samples.clone());
+        let _ = app_audio_manager::AppAudioManager::new();
 
         Application { event_loop, window, surface, context, winit_platform, imgui_context, ig_renderer, visualisation_renderer, audio_manager }
     }
@@ -56,7 +56,7 @@ impl Application {
     /// Start the main application loop with the provided UI descriptor function.
     /// 
     /// * `run_ui` - Is the function detailing the UI and its functionality.
-    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer, &mut audio_manager::AudioManager)>(self, mut run_ui: F) {
+    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer, &mut file_audio_manager::FileAudioManager)>(self, mut run_ui: F) {
         let Application {
             event_loop,
             window,
@@ -64,7 +64,6 @@ impl Application {
             context,
             mut winit_platform,
             mut imgui_context,
-            // glow_context,
             mut ig_renderer,
             mut visualisation_renderer,
             mut audio_manager
@@ -186,7 +185,7 @@ impl Application {
     fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
         // Create the imgui context
         let mut imgui_context = imgui::Context::create();
-        imgui_context.set_ini_filename(None); // TODO: Add support for ini files
+        imgui_context.set_ini_filename(PathBuf::from("imgui.ini"));
 
         // Initialise the ImGui winit platform backend
         let mut winit_platform = WinitPlatform::init(&mut imgui_context);

@@ -3,8 +3,11 @@ use imgui::{Key, Ui};
 use rfd::FileDialog;
 
 mod application;
-mod audio_manager;
+mod file_audio_manager;
+mod app_audio_manager;
 mod fft_renderer;
+
+const FFT_FREQUENCY: u32 = 5;
 
 fn main() {
     // Initialise app and helpers
@@ -23,7 +26,7 @@ fn main() {
 /// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data .
 /// 
 /// * `audio_manager` - Is the Audio Manager class that handles playing audio.
-fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut audio_manager::AudioManager) {
+fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut file_audio_manager::FileAudioManager) {
     // Window for displaying the visualisation
     ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).title_bar(false).build(|| {
         let draw_list = ui.get_window_draw_list();

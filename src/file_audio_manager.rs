@@ -2,13 +2,14 @@ use std::{ fs::File, io::BufReader, sync::{ Arc, Mutex }, time::Duration, path::
 use rodio::{ Decoder, OutputStream, source::Source, Sink, OutputStreamHandle };
 use rustfft::{ FftPlanner, num_complex::Complex, Fft };
 
+use crate::FFT_FREQUENCY;
+
 /// Holds all information needed for the FFT.
 struct FftFilter<I> {
     input: I,
     internal_vector: Vec<Complex<f32>>,
     output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
     counter: u16,
-    fft_frequency: u8,
     filter: Arc<dyn Fft<f32>>
 }
 
@@ -31,7 +32,7 @@ where I: Source<Item = f32>, {
         self.counter += 1;
 
         // If we have enough samples to perform an FFT, then do so
-        if self.internal_vector.len() == (self.input.sample_rate() / self.fft_frequency as u32) as usize {
+        if self.internal_vector.len() == (self.input.sample_rate() / FFT_FREQUENCY) as usize {
             // Perform FFT and place into our output vector
             self.perform_fft();
 
@@ -80,13 +81,11 @@ where I: Source<Item = f32>, {
     /// * `output_vector` - Is the thread safe vector to place processed FFT data into.
     /// 
     /// * `filter` - Is the FFT algorithm to use.
-    /// 
-    /// * `fft_frequency` - Is the time per second to perform the FFT.
-    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, filter: Arc<dyn Fft<f32>>, fft_frequency: u8) -> Self {
+    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, filter: Arc<dyn Fft<f32>>) -> Self {
         let counter: u16 = 0;
-        let internal_vector = Vec::new();
+        let internal_vector = Vec::with_capacity(input.sample_rate() as usize / FFT_FREQUENCY as usize);
 
-        FftFilter { input, internal_vector, output_vector, counter, fft_frequency, filter }
+        FftFilter { input, internal_vector, output_vector, counter, filter }
     }
 
     /// Performs the FFT on the internal vector and places the result into the output vector.
@@ -116,24 +115,23 @@ where I: Source<Item = f32>, {
 }
 
 /// Holds all necessary information for the audio manager.
-pub struct AudioManager {
+pub struct FileAudioManager {
     sink: Sink,
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
     sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
     fft_planner: FftPlanner<f32>,
-    fft_frequency: u8,
     opened_songs: Vec<PathBuf>,
     selected_song_idx: usize
 }
 
-impl AudioManager {
+impl FileAudioManager {
     /// Initialises and creates a new audio manager.
     /// 
     /// # Arguments
     /// 
     /// * `sample_destination`- Is the thread safe vector to place processed FFT data into,
-    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, fft_frequency: u8) -> Self {
+    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>) -> Self {
         let (_stream, stream_handle) = OutputStream::try_default().expect("Failed to get audio output device: ");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink: ");
 
@@ -141,7 +139,7 @@ impl AudioManager {
         let opened_songs = Vec::new();
         let selected_song_idx = usize::MAX;
 
-        AudioManager { sink, _stream, _stream_handle: stream_handle, sample_destination, fft_planner, fft_frequency, opened_songs, selected_song_idx }
+        FileAudioManager { sink, _stream, _stream_handle: stream_handle, sample_destination, fft_planner, opened_songs, selected_song_idx }
     }
 
     /// Update list of currently opened songs.
@@ -212,10 +210,10 @@ impl AudioManager {
             .convert_samples();
 
         // Plan FFT algorithm to use
-        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / self.fft_frequency as u32) as usize);
+        let fft = self.fft_planner.plan_fft_forward((source.sample_rate() / FFT_FREQUENCY) as usize);
 
         // Apply FFT filter to song and add to sink
-        let filter = FftFilter::new(source, self.sample_destination.clone(), fft, self.fft_frequency);
+        let filter = FftFilter::new(source, self.sample_destination.clone(), fft);
         self.sink.append(filter);
     }
 }
