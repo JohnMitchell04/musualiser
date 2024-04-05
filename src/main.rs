@@ -25,8 +25,8 @@ fn main() {
 /// 
 /// * `renderer` - Is the FFT Renderer class that creates the visualisation from audio data .
 /// 
-/// * `audio_manager` - Is the Audio Manager class that handles playing audio.
-fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, audio_manager: &mut file_audio_manager::FileAudioManager) {
+/// * `file_audio_manager` - Is the Audio Manager class that handles playing audio from files.
+fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftRenderer, file_audio_manager: &mut file_audio_manager::FileAudioManager) {
     // Window for displaying the visualisation
     ui.window("Visualisation").size([400.0, 400.0], imgui::Condition::FirstUseEver).title_bar(false).build(|| {
         let draw_list = ui.get_window_draw_list();
@@ -42,8 +42,8 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
         let list_box = imgui::ListBox::new("##song_list_box");
 
         // Add all currently opened songs and get selected song
-        let items = audio_manager.opened_songs();
-        let mut selected_item = audio_manager.selected_song_index();
+        let items = file_audio_manager.opened_songs();
+        let mut selected_item = file_audio_manager.selected_song_index();
 
         // Build list box
         fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }
@@ -54,7 +54,7 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
 
         // Update the current song
         if items.len() != 0 {
-            audio_manager.change_current_song(selected_item);
+            file_audio_manager.change_current_song(selected_item);
         }
 
         // Open file dialogue for the user to select a song
@@ -66,16 +66,16 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut fft_renderer::FftR
                 .pick_files()
                 .unwrap();
 
-            audio_manager.update_open_songs(opened_songs);
+            file_audio_manager.update_open_songs(opened_songs);
         }
     });
 
     // Pause/Play currently selected song
     if ui.is_key_pressed(Key::Space) {
-        if !audio_manager.is_paused() {
-            audio_manager.pause();
+        if !file_audio_manager.is_paused() {
+            file_audio_manager.pause();
         } else {
-            audio_manager.play();
+            file_audio_manager.play();
         }
     }
 }

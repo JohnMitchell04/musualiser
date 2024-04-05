@@ -4,6 +4,9 @@ use rustfft::{ FftPlanner, num_complex::Complex, Fft };
 
 use crate::FFT_FREQUENCY;
 
+// TODO: Look into using rodio's buffer to handle audio data
+// TODO: look into using communications channels instead of a chared vector
+
 /// Holds all information needed for the FFT.
 struct FftFilter<I> {
     input: I,
