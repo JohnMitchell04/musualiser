@@ -3,10 +3,14 @@ use imgui::{Key, Ui};
 use rfd::FileDialog;
 
 mod application;
+mod common_audio_manager;
 mod file_audio_manager;
 mod app_audio_manager;
 mod fft_renderer;
 
+/// This is number of "full" FFTs to perform per second, in order to
+/// smooth the visualisation a windowing of 25% is used which means the
+/// number of FFTs calculated is actually 4 times this.
 const FFT_FREQUENCY: u32 = 5;
 
 fn main() {

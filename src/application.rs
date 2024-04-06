@@ -1,4 +1,4 @@
-use std::{ num::NonZeroU32, path::PathBuf, sync::{ Arc, Mutex}, time::Instant };
+use std::{ num::NonZeroU32, path::PathBuf, sync::mpsc::{self, Receiver, Sender}, time::Instant };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
@@ -18,6 +18,7 @@ use imgui_winit_support::{
 };
 use raw_window_handle::HasRawWindowHandle;
 use imgui::Ui;
+use rustfft::num_complex::Complex;
 
 use crate::{fft_renderer, file_audio_manager, app_audio_manager};
 
@@ -31,7 +32,8 @@ pub struct Application {
     imgui_context: imgui::Context,
     ig_renderer: imgui_glow_renderer::AutoRenderer,
     visualisation_renderer: fft_renderer::FftRenderer,
-    audio_manager: file_audio_manager::FileAudioManager
+    file_audio_manager: file_audio_manager::FileAudioManager,
+    app_audio_manager: app_audio_manager::AppAudioManager,
 }
 
 impl Application {
@@ -45,12 +47,26 @@ impl Application {
         let ig_renderer = imgui_glow_renderer::AutoRenderer::initialize(glow_context, &mut imgui_context)
             .expect("Failed to create ImGui renderer: ");
 
-        let shared_samples = Arc::new(Mutex::new(Vec::new()));
-        let visualisation_renderer = fft_renderer::FftRenderer::new(shared_samples.clone());
-        let audio_manager = file_audio_manager::FileAudioManager::new(shared_samples.clone());
-        let _ = app_audio_manager::AppAudioManager::new();
+        // Create communications channels between the audio managers and renderer
+        let (transmit, receive): (Sender<Vec<(Complex<f32>, f32)>>, Receiver<Vec<(Complex<f32>, f32)>>) = mpsc::channel();
 
-        Application { event_loop, window, surface, context, winit_platform, imgui_context, ig_renderer, visualisation_renderer, audio_manager }
+        // Initialise the FFT visualisation renderer and audio managers
+        let visualisation_renderer = fft_renderer::FftRenderer::new(receive);
+        let file_audio_manager = file_audio_manager::FileAudioManager::new(transmit.clone());
+        let app_audio_manager = app_audio_manager::AppAudioManager::new(transmit);
+
+        Application {
+            event_loop,
+            window,
+            surface,
+            context,
+            winit_platform,
+            imgui_context,
+            ig_renderer,
+            visualisation_renderer,
+            file_audio_manager,
+            app_audio_manager
+        }
     }
 
     /// Start the main application loop with the provided UI descriptor function.
@@ -66,7 +82,8 @@ impl Application {
             mut imgui_context,
             mut ig_renderer,
             mut visualisation_renderer,
-            mut audio_manager
+            mut file_audio_manager,
+            app_audio_manager: _
         } = self;
         let mut last_frame = Instant::now();
 
@@ -90,7 +107,7 @@ impl Application {
 
                     let ui = imgui_context.frame();
                     let mut run = true;
-                    run_ui(&mut run, ui, &mut visualisation_renderer, &mut audio_manager);
+                    run_ui(&mut run, ui, &mut visualisation_renderer, &mut file_audio_manager);
                     if !run {
                         window_target.exit();
                     }

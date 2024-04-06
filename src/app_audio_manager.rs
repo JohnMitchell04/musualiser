@@ -1,18 +1,19 @@
-use std::{collections::VecDeque, slice, sync::mpsc::{self, Receiver, Sender}, thread::{self, JoinHandle}};
-use rustfft::num_complex::Complex;
+use std::{collections::VecDeque, slice, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread::{self, JoinHandle}};
+use rustfft::{num_complex::Complex, FftPlanner};
 use wasapi::*;
 
 use crate::FFT_FREQUENCY;
+use crate::common_audio_manager::FftHandler;
 
 struct AudioThread {
     audio_client: AudioClient,
     format: WaveFormat,
     playing: bool,
-    sample_destination: mpsc::Sender<Vec<Complex<f32>>>,
+    handler: FftHandler,
 }
 
 impl AudioThread {
-    pub fn new(sample_destination: mpsc::Sender<Vec<Complex<f32>>>) -> Self {
+    pub fn new(sample_destination: Sender<Vec<(Complex<f32>, f32)>>, fft_planner: Arc<Mutex<FftPlanner<f32>>>) -> Self {
         // Get device and client
         let device = get_default_device(&Direction::Capture).unwrap();
         let mut audio_client = device.get_iaudioclient().unwrap();
@@ -32,7 +33,13 @@ impl AudioThread {
             true,
         ).unwrap();
 
-        AudioThread { audio_client, format, playing: false, sample_destination }
+        // Plan FFT for this format
+        let fft = fft_planner.lock().unwrap().plan_fft_forward(format.get_samplespersec() as usize);
+
+        // Create the FFT handler
+        let handler = FftHandler::new(sample_destination, format.get_samplespersec(), fft);
+
+        AudioThread { audio_client, format, playing: false, handler }
     }
 
     pub fn capture_loop(&mut self, receiver: mpsc::Receiver<bool>) {
@@ -82,13 +89,8 @@ impl AudioThread {
                 let data_ptr = data_ptr as *const f32;
                 let final_data = unsafe { slice::from_raw_parts(data_ptr, block_align as usize * chunk_size / 4) };
 
-                // Create vec and send to renderer
-                let data: Vec<Complex<f32>> = final_data.chunks(2).map(|x| Complex { re: x[0], im: 0.0 }).collect();
-                match self.sample_destination.send(data) {
-                    Ok(_) => {}
-                    // Main thread has disconnected so end here
-                    Err(_) => { return; }
-                }
+                // Perform FFT on the data
+                self.handler.perform_fft(final_data);
             }
     
             // Read from device to queue
@@ -118,33 +120,44 @@ impl AudioThread {
     }
 }
 
-/// Holds all necessary information for the audio manager.
+/// Holds all necessary information for the app audio manager.
 pub struct AppAudioManager {
     current_handle: JoinHandle<()>,
-    sample_destination: mpsc::Sender<Vec<Complex<f32>>>,
+    sample_destination: Sender<Vec<(Complex<f32>, f32)>>,
     playing: bool,
-    transmit: mpsc::Sender<bool>,
+    transmit: Sender<bool>,
+    fft_planner: Arc<Mutex<FftPlanner<f32>>>,
 }
 
 impl AppAudioManager {
-    pub fn new(sample_destination: mpsc::Sender<Vec<Complex<f32>>>) -> Self {
-        let current_handle;
+    /// Initialises and creates a new app audio manager.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `sample_destination` - Is the destination to send the samples for rendering.
+    pub fn new(sample_destination: Sender<Vec<(Complex<f32>, f32)>>) -> Self {
+        // Create FFT planner
+        let fft_planner = Arc::new(Mutex::new(FftPlanner::new()));
+        let fft_planner_clone = fft_planner.clone();
 
-        // Communications channel for the thread
+        // Communications channel for control over the thread
         let (transmit, receive): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+        let sample_destination_clone = sample_destination.clone();
 
         // Create the audio thread
-        current_handle = thread::Builder::new()
+        let current_handle = thread::Builder::new()
             .name("Capture".to_string())
             .spawn(move || {
-                let mut audio_thread = AudioThread::new(sample_destination.clone());
+                let mut audio_thread = AudioThread::new(sample_destination_clone, fft_planner_clone);
                 audio_thread.capture_loop(receive);
             }).unwrap();
 
-        AppAudioManager { current_handle, sample_destination, playing: false, transmit }
+        AppAudioManager { current_handle, sample_destination, playing: false, transmit, fft_planner }
     }
 
     /// Starts the audio stream passing samples to the FFT processor.
+    /// 
+    /// If the audio thread has died for some reason, it will be revived.
     pub fn start(&mut self) {
         match self.transmit.send(true) {
             Ok(_) => { self.playing = true; }
@@ -154,6 +167,8 @@ impl AppAudioManager {
     }
 
     /// Stops the audio stream passing samples to the FFT processor.
+    /// 
+    /// If the audio thread has died for some reason, it will be revived.
     pub fn stop(&mut self) {
         match self.transmit.send(false) {
             Ok(_) => { self.playing = false; }
@@ -165,13 +180,16 @@ impl AppAudioManager {
 
     /// Revives the audio thread if it has died.
     fn revive_thread(&mut self) {
-        // Communications channel for the thread
+        // Communications channel for control over the thread
         let (transmit, receive): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+
+        let fft_planner = self.fft_planner.clone();
+        let sample_destination = self.sample_destination.clone();
 
         self.current_handle = thread::Builder::new()
             .name("Capture".to_string())
             .spawn(move || {
-                let mut audio_thread = AudioThread::new(self.sample_destination.clone());
+                let mut audio_thread = AudioThread::new(sample_destination, fft_planner);
                 audio_thread.capture_loop(receive);
             }).unwrap();
 

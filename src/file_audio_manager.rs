@@ -1,19 +1,18 @@
-use std::{ fs::File, io::BufReader, sync::{ Arc, Mutex }, time::Duration, path::PathBuf };
+use std::{ fs::File, io::BufReader, path::PathBuf, sync::{ mpsc::Sender, Arc }, time::Duration };
 use rodio::{ Decoder, OutputStream, source::Source, Sink, OutputStreamHandle };
 use rustfft::{ FftPlanner, num_complex::Complex, Fft };
 
 use crate::FFT_FREQUENCY;
+use crate::common_audio_manager::FftHandler;
 
 // TODO: Look into using rodio's buffer to handle audio data
-// TODO: look into using communications channels instead of a chared vector
 
-/// Holds all information needed for the FFT.
+/// Holds all information needed for the FFT filter over a Rodio stream.
 struct FftFilter<I> {
     input: I,
-    internal_vector: Vec<Complex<f32>>,
-    output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
+    internal_vector: Vec<f32>,
     counter: u16,
-    filter: Arc<dyn Fft<f32>>
+    handler: FftHandler,
 }
 
 impl<I> Iterator for FftFilter<I>
@@ -29,16 +28,16 @@ where I: Source<Item = f32>, {
 
         // Ensure we only get samples from the first channel
         if self.counter % self.input.channels() == 0 {
-            self.internal_vector.push(Complex { re: sample, im: 0.0});
+            self.internal_vector.push(sample);
         }
 
         self.counter += 1;
 
         // If we have enough samples to perform an FFT, then do so
         if self.internal_vector.len() == (self.input.sample_rate() / FFT_FREQUENCY) as usize {
-            // Perform FFT and place into our output vector
-            self.perform_fft();
+            self.handler.perform_fft(self.internal_vector.as_slice());
 
+            // Remove the first quarter of the samples, this is done to smooth the visualisation by creating overlapping windows
             self.internal_vector.drain(0..self.internal_vector.len() / 4);
             self.counter = self.internal_vector.len() as u16;
         }
@@ -81,60 +80,37 @@ where I: Source<Item = f32>, {
     /// 
     /// * `input` - Is the audio source to perform the FFT on.
     /// 
-    /// * `output_vector` - Is the thread safe vector to place processed FFT data into.
+    /// * `sample_destination` - Is the sender to the renderer.
     /// 
     /// * `filter` - Is the FFT algorithm to use.
-    pub fn new(input: I, output_vector: Arc<Mutex<Vec<(Complex<f32>, f32)>>>, filter: Arc<dyn Fft<f32>>) -> Self {
+    pub fn new(input: I, sample_destination: Sender<Vec<(Complex<f32>, f32)>>, filter: Arc<dyn Fft<f32>>) -> Self {
         let counter: u16 = 0;
         let internal_vector = Vec::with_capacity(input.sample_rate() as usize / FFT_FREQUENCY as usize);
+        let handler = FftHandler::new(sample_destination, input.sample_rate(), filter);
 
-        FftFilter { input, internal_vector, output_vector, counter, filter }
-    }
-
-    /// Performs the FFT on the internal vector and places the result into the output vector.
-    pub fn perform_fft(&mut self) {
-        // Copy data into temporary array for FFT process
-        let mut temp = self.internal_vector.clone();
-
-        // Perform FFT
-        self.filter.process(&mut temp);
-        temp.drain((temp.len() / 2)..temp.len());
-        
-        // Calculate the frequency for each bin
-        let step = self.sample_rate() as f32 / temp.len() as f32;
-        let mut transformed_data = Vec::new();
-        for (index, amp) in temp.iter().enumerate() {
-            let fr = index as f32 * step;
-            transformed_data.push((*amp, fr));
-        }
-
-        // Remove inaudible frequencies
-        transformed_data.retain(|&x| x.1 > 20.0 && x.1 < 20000.0);
-
-        let mut lock = self.output_vector.lock().unwrap();
-        let data = &mut *lock;
-        *data = transformed_data.clone();
+        FftFilter { input, internal_vector, counter, handler}
     }
 }
 
-/// Holds all necessary information for the audio manager.
+/// Holds all necessary information for the file audio manager.
 pub struct FileAudioManager {
     sink: Sink,
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
-    sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
+    sample_destination: Sender<Vec<(Complex<f32>, f32)>>,
     fft_planner: FftPlanner<f32>,
     opened_songs: Vec<PathBuf>,
     selected_song_idx: usize
 }
 
 impl FileAudioManager {
-    /// Initialises and creates a new audio manager.
+    /// Initialises and creates a new audio manager to handle file playback and FFT processing.
     /// 
     /// # Arguments
     /// 
-    /// * `sample_destination`- Is the thread safe vector to place processed FFT data into,
-    pub fn new(sample_destination: Arc<Mutex<Vec<(Complex<f32>, f32)>>>) -> Self {
+    /// * `sample_destination`- Is the sender to the renderer.
+    pub fn new(sample_destination: Sender<Vec<(Complex<f32>, f32)>>) -> Self {
+        // Initialise rodio
         let (_stream, stream_handle) = OutputStream::try_default().expect("Failed to get audio output device: ");
         let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink: ");
 

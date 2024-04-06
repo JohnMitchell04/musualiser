@@ -1,11 +1,11 @@
-use std::sync::{ Arc, Mutex };
+use std::sync::mpsc::Receiver;
 use rustfft::num_complex::Complex;
 use imgui::{DrawListMut, ImColor32};
 use splines::{Key, Spline};
 
 /// Holds all necessary information for the visualisation renderer.
 pub struct FftRenderer {
-    input_data: Arc<Mutex<Vec<(Complex<f32>, f32)>>>,
+    samples: Receiver<Vec<(Complex<f32>, f32)>>,
     current_render_data: Vec<[f32; 2]>,
     current_size: [f32; 2]
 }
@@ -17,37 +17,38 @@ impl FftRenderer {
     /// 
     /// * `glow_context` - Is the OpenGL context.
     /// 
-    /// * `input_data` - Is the Fourier transformed audio input data.
+    /// * `input_data` - Is the Fourier transformed audio input data receiver.
     /// 
     /// * `textures` - Is the texture mapping.
-    pub fn new(input_data: Arc<Mutex<Vec<(Complex<f32>, f32)>>>) -> Self {
+    pub fn new(samples: Receiver<Vec<(Complex<f32>, f32)>>) -> Self {
         let current_size = [0.0, 0.0];
         let current_render_data = Vec::new();
 
-        FftRenderer { input_data, current_render_data, current_size }
+        FftRenderer { samples, current_render_data, current_size }
     }
 
     /// Handle rendering, if the size of the window hasn't changed or the data is the same this is unecessary and skipped.
     /// 
     /// # Arguments
     /// 
+    /// * `draw_list` - Is the draw list for the render window.
+    /// 
     /// * `size` - Is the size of the render window.
+    /// 
+    /// * `origin` - Is the origin of the render window.
     pub fn render(&mut self, draw_list: DrawListMut<'_>, size: [f32; 2], origin: [f32; 2]) {
         // If the size of the window has changed, the data needs to be recalculated
         if self.current_size != size {
             self.resize(size);
         }
 
-        let mut lock = self.input_data.lock().unwrap();
-        let data = &mut *lock;
-        if !data.is_empty() {
-            self.current_render_data = self.preprocess_data(data);
-
-            // Data is no longer needed
-            (*data).clear();
-            drop(lock);
-
-            self.current_render_data = self.interpolate_data();
+        // See if there is new data to render
+        match self.samples.try_recv() {
+            Ok(data) => {
+                self.current_render_data = self.preprocess_data(&data);
+                self.current_render_data = self.interpolate_data();        
+            },
+            _ => {}
         }
 
         // Draw bezier curves for the visualisation
@@ -85,7 +86,7 @@ impl FftRenderer {
     /// 
     /// # Arguments
     /// 
-    /// * `lock` - Is the lock on the input data.
+    /// * `data` - Is the data to process.
     fn preprocess_data(&self, data: &Vec<(Complex<f32>, f32)>) -> Vec<[f32; 2]> {
         let width = self.current_size[0];
         let height = self.current_size[1];
@@ -127,7 +128,7 @@ impl FftRenderer {
         final_data
     }
 
-    /// Performs an interpolation of the data which is used to create a smooth visualisation.
+    /// Performs an interpolation of the data, this is used to create a smooth visualisation.
     /// 
     /// The data is interpolated using a Catmull-Rom spline.
     fn interpolate_data(&self) -> Vec<[f32; 2]> {
