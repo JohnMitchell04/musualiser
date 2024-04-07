@@ -1,9 +1,11 @@
-use std::{collections::VecDeque, slice, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread::{self, JoinHandle}};
+use std::{collections::VecDeque, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread::{self, JoinHandle}};
 use rustfft::{num_complex::Complex, FftPlanner};
 use wasapi::*;
 
 use crate::FFT_FREQUENCY;
 use crate::common_audio_manager::FftHandler;
+
+// TODO: Maybe set thread priority to high
 
 struct AudioThread {
     audio_client: AudioClient,
@@ -15,11 +17,11 @@ struct AudioThread {
 impl AudioThread {
     pub fn new(sample_destination: Sender<Vec<(Complex<f32>, f32)>>, fft_planner: Arc<Mutex<FftPlanner<f32>>>) -> Self {
         // Get device and client
-        let device = get_default_device(&Direction::Capture).unwrap();
+        let device = get_default_device(&Direction::Render).unwrap();
         let mut audio_client = device.get_iaudioclient().unwrap();
 
-        // Get default format
-        let format = AudioClient::get_mixformat(&audio_client).unwrap();
+        // Set desired format
+        let format = WaveFormat::new(32, 32, &SampleType::Float, 44100, 1, None);
 
         // Gather information about format and client
         let (_def_time, min_time) = audio_client.get_periods().unwrap();
@@ -34,7 +36,7 @@ impl AudioThread {
         ).unwrap();
 
         // Plan FFT for this format
-        let fft = fft_planner.lock().unwrap().plan_fft_forward(format.get_samplespersec() as usize);
+        let fft = fft_planner.lock().unwrap().plan_fft_forward(format.get_samplespersec() as usize / FFT_FREQUENCY as usize);
 
         // Create the FFT handler
         let handler = FftHandler::new(sample_destination, format.get_samplespersec(), fft);
@@ -50,8 +52,7 @@ impl AudioThread {
 
         // Gather information about format
         let block_align = self.format.get_blockalign();
-        let chunk_size = 44100 / FFT_FREQUENCY as usize;
-        let channels = self.format.get_nchannels();
+        let chunk_size = self.format.get_samplespersec() as usize / FFT_FREQUENCY as usize;
     
         // Create queue for sending samples
         let mut sample_queue: VecDeque<u8> = VecDeque::with_capacity(
@@ -64,33 +65,38 @@ impl AudioThread {
             Err(_) => { return; }
         }
 
+        // Allocate memory as f32 to ensure correct alignment
+        let mut data = Vec::with_capacity(chunk_size);
+
         // Main loop
         loop {
-            // If we have enough samples, send a chunk
-            while sample_queue.len() > (block_align as usize * chunk_size) {
-                // Allocate memory as f32 to ensure correct alignment
-                let mut data = vec![0.0; block_align as usize * chunk_size / 4];
-    
-                // Reinterpret the memory as u8
-                let data_ptr = data.as_mut_ptr() as *mut u8;
-                let chunk = unsafe { slice::from_raw_parts_mut(data_ptr, block_align as usize * chunk_size) };
-    
-                // Fill the chunk with samples
-                let mut sum: usize = 0;
-                for element in chunk.iter_mut() {
-                    // We don't want to send samples from all channels
-                    if sum % channels as usize == 0 {
-                        *element = sample_queue.pop_front().unwrap();
-                    }
-                    sum += 1;
+            while !sample_queue.is_empty() {
+                // Temporary buffer for samples
+                let mut temp = Vec::with_capacity(std::cmp::min(sample_queue.len(), (chunk_size - data.len()) * 4));
+
+                // Try to fill the chunk with samples
+                while sample_queue.len() > 0 && temp.len() < temp.capacity() {
+                    temp.push(sample_queue.pop_front().unwrap());
                 }
-    
-                // Convert back to f32
-                let data_ptr = data_ptr as *const f32;
-                let final_data = unsafe { slice::from_raw_parts(data_ptr, block_align as usize * chunk_size / 4) };
+
+                // Convert to f32
+                for chunk in temp.chunks(4) {
+                    let mut sample = [0; 4];
+                    sample.copy_from_slice(chunk);
+                    let sample = f32::from_ne_bytes(sample);
+                    data.push(sample);
+                }
+
+                // Ensure the chunk is filled before further processing
+                if data.len() != chunk_size {
+                    break;
+                }
 
                 // Perform FFT on the data
-                self.handler.perform_fft(final_data);
+                self.handler.perform_fft(data.as_slice());
+
+                // Remove the first quarter of the samples, this is done to smooth the visualisation by creating overlapping windows
+                data.drain(0..data.len() / 4);
             }
     
             // Read from device to queue
@@ -162,7 +168,7 @@ impl AppAudioManager {
         match self.transmit.send(true) {
             Ok(_) => { self.playing = true; }
             // Thread has died for some reason
-            Err(_) => { self.revive_thread(); }
+            Err(_) => { self.revive_thread(); self.playing = true;}
         }
     }
 
@@ -173,9 +179,14 @@ impl AppAudioManager {
         match self.transmit.send(false) {
             Ok(_) => { self.playing = false; }
             // Thread has died for some reason
-            Err(_) => { self.revive_thread(); }
+            Err(_) => { self.revive_thread(); self.playing = false; }
         }
         self.playing = false;
+    }
+
+    /// Returns whether the audio is currently playing.
+    pub fn is_playing(&self) -> bool {
+        self.playing
     }
 
     /// Revives the audio thread if it has died.

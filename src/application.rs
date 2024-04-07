@@ -20,7 +20,7 @@ use raw_window_handle::HasRawWindowHandle;
 use imgui::Ui;
 use rustfft::num_complex::Complex;
 
-use crate::{fft_renderer, file_audio_manager, app_audio_manager};
+use crate::{fft_renderer::FftRenderer, file_audio_manager::FileAudioManager, app_audio_manager::AppAudioManager};
 
 /// Holds all necessary information about our application.
 pub struct Application {
@@ -31,9 +31,9 @@ pub struct Application {
     winit_platform: WinitPlatform,
     imgui_context: imgui::Context,
     ig_renderer: imgui_glow_renderer::AutoRenderer,
-    visualisation_renderer: fft_renderer::FftRenderer,
-    file_audio_manager: file_audio_manager::FileAudioManager,
-    app_audio_manager: app_audio_manager::AppAudioManager,
+    visualisation_renderer: FftRenderer,
+    file_audio_manager: FileAudioManager,
+    app_audio_manager: AppAudioManager,
 }
 
 impl Application {
@@ -51,9 +51,9 @@ impl Application {
         let (transmit, receive): (Sender<Vec<(Complex<f32>, f32)>>, Receiver<Vec<(Complex<f32>, f32)>>) = mpsc::channel();
 
         // Initialise the FFT visualisation renderer and audio managers
-        let visualisation_renderer = fft_renderer::FftRenderer::new(receive);
-        let file_audio_manager = file_audio_manager::FileAudioManager::new(transmit.clone());
-        let app_audio_manager = app_audio_manager::AppAudioManager::new(transmit);
+        let visualisation_renderer = FftRenderer::new(receive);
+        let file_audio_manager = FileAudioManager::new(transmit.clone());
+        let app_audio_manager = AppAudioManager::new(transmit);
 
         Application {
             event_loop,
@@ -72,7 +72,7 @@ impl Application {
     /// Start the main application loop with the provided UI descriptor function.
     /// 
     /// * `run_ui` - Is the function detailing the UI and its functionality.
-    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut fft_renderer::FftRenderer, &mut file_audio_manager::FileAudioManager)>(self, mut run_ui: F) {
+    pub fn main_loop<F: FnMut(&mut bool, &mut Ui, &mut FftRenderer, &mut FileAudioManager, &mut AppAudioManager)>(self, mut run_ui: F) {
         let Application {
             event_loop,
             window,
@@ -83,7 +83,7 @@ impl Application {
             mut ig_renderer,
             mut visualisation_renderer,
             mut file_audio_manager,
-            app_audio_manager: _
+            mut app_audio_manager
         } = self;
         let mut last_frame = Instant::now();
 
@@ -107,7 +107,7 @@ impl Application {
 
                     let ui = imgui_context.frame();
                     let mut run = true;
-                    run_ui(&mut run, ui, &mut visualisation_renderer, &mut file_audio_manager);
+                    run_ui(&mut run, ui, &mut visualisation_renderer, &mut file_audio_manager, &mut app_audio_manager);
                     if !run {
                         window_target.exit();
                     }

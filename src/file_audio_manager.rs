@@ -124,6 +124,7 @@ impl FileAudioManager {
     /// Update list of currently opened songs.
     pub fn update_open_songs(&mut self, opened_songs: Vec<PathBuf>) {
         self.opened_songs = opened_songs;
+        self.opened_songs.insert(0, PathBuf::from("Stop"));
     }
 
     /// Returns the vector of songs that have been opened.
@@ -142,6 +143,12 @@ impl FileAudioManager {
     ///
     /// * `index` - Is the index of the song to change to.
     pub fn change_current_song(&mut self, index: usize) {
+        if index == 0 {
+            self.clear_queue();
+            self.selected_song_idx = index;
+            return;
+        }
+
         if index == self.selected_song_idx { return }
 
         // Changing song, so clear sink and update currently playing
