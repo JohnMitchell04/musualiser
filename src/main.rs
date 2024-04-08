@@ -48,16 +48,21 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
         ui.text("Songs");
 
         // App audio
-        let test = &mut false;
-        if ui.checkbox("App Audio", test) {
-            if app_audio_manager.is_playing() {
+        let app_audio = app_audio_manager.is_playing();
+        let mut temp = app_audio;
+        if ui.checkbox("App Audio", &mut temp) {
+            if app_audio {
                 app_audio_manager.stop();
             } else {
                 app_audio_manager.start();
             }
         }
 
-        if !(*test) {
+        // Force app audio to check if output device has changed
+        app_audio_manager.check_device();
+
+        // Only allow the user to select file audio if app audio is not playing
+        if !(app_audio) {
             let width_specifier = ui.push_item_width(-1.0);
             let list_box = imgui::ListBox::new("##song_list_box");
 
