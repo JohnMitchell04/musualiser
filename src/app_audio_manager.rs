@@ -29,9 +29,6 @@ impl AudioThread {
         // Set desired format
         let format = WaveFormat::new(32, 32, &SampleType::Float, 44100, 1, None);
 
-        // Gather information about format and client
-        // let (_def_time, min_time) = audio_client.get_periods().unwrap();
-
         // Initialize client
         audio_client.initialize_client(
             &format,
@@ -194,9 +191,9 @@ impl AppAudioManager {
     /// If the audio thread has died for some reason, it will be created in the correct state.
     pub fn check_device(&mut self, pid: Pid) {
         match self.device_change.try_recv() {
-            Ok(value) => { if value { self.create_thread(pid); } }
+            Ok(value) => if value { self.create_thread(pid); }
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => { self.create_thread(pid); }
+            Err(TryRecvError::Disconnected) => self.create_thread(pid)
         }
     }
 
@@ -242,11 +239,11 @@ impl AppAudioManager {
 /// Custom callback for when new audio sessions are created.
 #[implement(IAudioSessionNotification)]
 struct AudioSessionNotification {
-    current_apps: Rc<RefCell<Vec<Pid>>>,
+    current_apps: Rc<RefCell<Vec<(String, Pid)>>>,
 }
 
 impl AudioSessionNotification {
-    pub fn new(current_apps: Rc<RefCell<Vec<Pid>>>) -> Self {
+    pub fn new(current_apps: Rc<RefCell<Vec<(String, Pid)>>>) -> Self {
         AudioSessionNotification { current_apps }
     }
 }
@@ -256,11 +253,19 @@ impl IAudioSessionNotification_Impl for AudioSessionNotification {
         // Get process ID
         let session = newsession.unwrap().clone();
         let session2: IAudioSessionControl2 = session.cast().unwrap();
-        let pid = unsafe { Pid::from_u32(session2.GetProcessId().unwrap()) };
+        let pid_find = unsafe { Pid::from_u32(session2.GetProcessId().unwrap()) };
         
         // Ensure the PID is not already in the list
-        if !self.current_apps.borrow().contains(&pid) {
-            self.current_apps.borrow_mut().push(pid);
+        if !self.current_apps.borrow().iter().any(|(_, pid)| pid_find == *pid) {
+            // TODO: Creating this is probably suboptimal but the hope is that this is going to happen very rarely,
+            // whenever a new audio stream is opened
+            // Refresh system
+            let mut system = System::new();
+            let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
+            system.refresh_specifics(refresh);
+
+            let process = system.process(pid_find).unwrap();
+            self.current_apps.borrow_mut().push((process.name().to_string(), pid_find));
         }
 
         Ok(())
@@ -268,8 +273,7 @@ impl IAudioSessionNotification_Impl for AudioSessionNotification {
 }
 
 struct AppMonitor {
-    current_apps: Rc<RefCell<Vec<Pid>>>,
-    system: System,
+    current_apps: Rc<RefCell<Vec<(String, Pid)>>>,
     session_manager: IAudioSessionManager2,
     notification: IAudioSessionNotification,
 }
@@ -287,11 +291,6 @@ impl AppMonitor {
             let device = device_enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).unwrap();
             session_manager = device.Activate(CLSCTX_ALL, None).unwrap();
 
-            // Create and refresh system for notifications
-            let mut system = System::new();
-            let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
-            system.refresh_specifics(refresh);
-
             // Register with audio notifications
             notification = AudioSessionNotification::new(current_apps.clone()).into();
             session_manager.RegisterSessionNotification(&notification).unwrap();
@@ -299,6 +298,12 @@ impl AppMonitor {
             // Enumerate all applications with an open audio session
             let enumerator = session_manager.GetSessionEnumerator().unwrap();
             let count = enumerator.GetCount().unwrap();
+
+            // Create system to get info
+            let mut system = System::new();
+            let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
+            system.refresh_specifics(refresh);
+
             for i in 0..count {
                 let session = enumerator.GetSession(i).unwrap();
 
@@ -309,48 +314,17 @@ impl AppMonitor {
                 // Skip idle application
                 if pid == Pid::from_u32(0) { continue; }
 
-                current_apps.borrow_mut().push(pid);
+                let process = system.process(pid).unwrap();
+
+                current_apps.borrow_mut().push((process.name().to_string(), pid));
             }
         }
 
-        // Create and refresh system
-        let mut system = System::new();
-        let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
-        system.refresh_specifics(refresh);
-
-        AppMonitor { current_apps, system, session_manager, notification }
+        AppMonitor { current_apps, session_manager, notification }
     }
 
     pub fn get_opened_info(&mut self) -> Vec<(String, Pid)> {
-        // Refresh system
-        let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
-        self.system.refresh_specifics(refresh);
-
-        zip(self.get_opened_names(), self.get_opened_pids()).collect()
-    }
-
-    /// Returns the names of all audio producing applications.
-    fn get_opened_names(&mut self) -> Vec<String> {
-        let mut names = Vec::new();
-        for app in self.current_apps.borrow().iter() {
-            let process = self.system.process(*app);
-            if process.is_none() { self.current_apps.borrow_mut().retain(|x| x != app); }
-            else { names.push(process.unwrap().name().to_string()); }
-        }
-
-        names
-    }
-
-    /// Returns the PIDs of all audio producing applications
-    fn get_opened_pids(&self) -> Vec<Pid> {
-        let mut pids = Vec::new();
-        for app in self.current_apps.borrow().iter() {
-            let process = self.system.process(*app);
-            if process.is_none() { self.current_apps.borrow_mut().retain(|x| x != app); }
-            else { pids.push(*app); }
-        }
-        
-        pids
+        self.current_apps.borrow().clone()
     }
 }
 
