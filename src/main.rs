@@ -13,7 +13,7 @@ use file_audio_manager::FileAudioManager;
 use app_audio_manager::AppAudioManager;
 
 /// This is number of "full" FFTs to perform per second, in order to
-/// smooth the visualisation a windowing of 25% is used which means the
+/// smooth the visualisation, a windowing of 25% is used which means the
 /// number of FFTs calculated is actually 4 times this.
 const FFT_FREQUENCY: u32 = 5;
 
@@ -49,8 +49,8 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
 
         // App audio
         let app_audio = app_audio_manager.is_playing();
-        let mut temp = app_audio;
-        if ui.checkbox("App Audio", &mut temp) {
+        let mut value = app_audio;
+        if ui.checkbox("App Audio", &mut value) {
             if app_audio {
                 app_audio_manager.stop();
             } else {
@@ -58,8 +58,25 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
             }
         }
 
-        // Force app audio to check if output device has changed
-        app_audio_manager.check_device();
+        // Create dropdown of applications
+        if value {
+            let width_specifier = ui.push_item_width(-1.0);
+            let list_box = imgui::ListBox::new("##source_list_box");
+
+            // Add all currently opened applications and get selected application
+            let items = app_audio_manager.opened_applications();
+            let names: Vec<String> = items.iter().map(|item| item.0.clone()).collect();
+            let mut index = 0;
+
+            // Build list box
+            fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }
+            imgui::ListBox::build_simple(list_box, ui, &mut index, &names, &label_function);
+
+            width_specifier.end();
+
+            // Update app audio manager if needed
+            app_audio_manager.update(items[index].clone());
+        }
 
         // Only allow the user to select file audio if app audio is not playing
         if !(app_audio) {

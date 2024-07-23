@@ -17,4 +17,15 @@ imgui-winit-support = { version = "0.11.0", path = "./imgui-winit-support" }
 imgui-glow-renderer = { version = "0.11.0", path = "./imgui-glow-renderer" }
 glutin-winit = "0.4.2"
 raw-window-handle = "0.5.0"
-wasapi = "0.14.0"
+wasapi = "0.15.0"
+sysinfo = "0.30.12"
+windows-core = "0.56.0"
+
+[dependencies.windows]
+version = "0.56"
+features = [
+    "Foundation",
+    "implement",
+    "Win32_Media_Audio",
+    "Win32_System_Com"
+]

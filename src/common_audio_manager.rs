@@ -39,6 +39,6 @@ impl FftHandler {
         transformed_data.retain(|&x| x.1 > 20.0 && x.1 < 20000.0);
 
         // Send data to visualisation renderer, this should always succeed if our program is still running
-        self.sample_destination.send(transformed_data).unwrap();
+        let _ = self.sample_destination.send(transformed_data);
     }
 }

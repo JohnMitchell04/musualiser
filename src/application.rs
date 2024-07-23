@@ -1,4 +1,4 @@
-use std::{ num::NonZeroU32, path::PathBuf, sync::mpsc::{self, Receiver, Sender}, time::Instant };
+use std::{ num::NonZeroU32, sync::mpsc::{self, Receiver, Sender}, time::Instant };
 use glutin::{ 
     context::{ ContextAttributesBuilder, NotCurrentGlContext, PossiblyCurrentContext },
     config::ConfigTemplateBuilder,
@@ -202,7 +202,8 @@ impl Application {
     fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
         // Create the imgui context
         let mut imgui_context = imgui::Context::create();
-        imgui_context.set_ini_filename(PathBuf::from("imgui.ini"));
+        // imgui_context.set_ini_filename(PathBuf::from("imgui.ini")); // TODO: This doesn't work for some reason
+        imgui_context.set_ini_filename(None);
 
         // Initialise the ImGui winit platform backend
         let mut winit_platform = WinitPlatform::init(&mut imgui_context);
