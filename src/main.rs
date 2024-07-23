@@ -66,7 +66,12 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
             // Add all currently opened applications and get selected application
             let items = app_audio_manager.opened_applications();
             let names: Vec<String> = items.iter().map(|item| item.0.clone()).collect();
-            let mut index = 0;
+            let curr_pid = app_audio_manager.current_pid();
+            let mut index = if let Some(curr_pid) = curr_pid {
+                items.iter().enumerate().position(|(_, (_, pid))| curr_pid == *pid).unwrap()
+            } else {
+                0
+            };
 
             // Build list box
             fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }

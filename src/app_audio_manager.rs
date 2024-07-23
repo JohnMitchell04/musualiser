@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::VecDeque, iter::zip, rc::Rc, sync::{mpsc::{self, Receiver, Sender, TryRecvError}, Arc, Condvar, Mutex}, thread::{self, JoinHandle}};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc, sync::{mpsc::{self, Receiver, Sender, TryRecvError}, Arc, Condvar, Mutex}, thread::{self, JoinHandle}};
 use rustfft::{num_complex::Complex, FftPlanner};
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 use windows::{core::{implement, Interface}, Win32::{Media::Audio::{eMultimedia, eRender, IAudioSessionControl, IAudioSessionControl2, IAudioSessionManager2, IAudioSessionNotification, IAudioSessionNotification_Impl, IMMDeviceEnumerator, MMDeviceEnumerator}, System::Com::{CoCreateInstance, CLSCTX_ALL}}};
@@ -16,10 +16,18 @@ struct AudioThread {
     playing: Arc<(Mutex<bool>, Condvar)>,
     device_change: Sender<bool>,
     handler: FftHandler,
+    kill: Receiver<bool>,
 }
 
 impl AudioThread {
-    pub fn new(sample_destination: Sender<Vec<(Complex<f32>, f32)>>, fft_planner: Arc<Mutex<FftPlanner<f32>>>, playing: Arc<(Mutex<bool>, Condvar)>, device_change: Sender<bool>, process_id: Pid) -> Self {
+    pub fn new(
+        sample_destination: Sender<Vec<(Complex<f32>, f32)>>,
+        fft_planner: Arc<Mutex<FftPlanner<f32>>>,
+        playing: Arc<(Mutex<bool>, Condvar)>,
+        device_change: Sender<bool>,
+        process_id: Pid,
+        kill: Receiver<bool>
+    ) -> Self {
         // Get device and client
         let device = get_default_device(&Direction::Render).unwrap();
         let device_id = device.get_id().unwrap();
@@ -44,7 +52,7 @@ impl AudioThread {
         // Create the FFT handler
         let handler = FftHandler::new(sample_destination, format.get_samplespersec(), fft);
 
-        AudioThread { device_id, audio_client, format, playing, handler, device_change }
+        AudioThread { device_id, audio_client, format, playing, handler, device_change, kill }
     }
 
     pub fn capture_loop(&mut self,) {
@@ -133,6 +141,13 @@ impl AudioThread {
 
                 self.audio_client.start_stream().unwrap()
             }
+
+            // Allow the main thread to kill this thread if necessary
+            match self.kill.try_recv() {
+                Ok(value) => if value { return },
+                Err(TryRecvError::Empty) => {},
+                Err(TryRecvError::Disconnected) => return, 
+            }
         }
     }
 }
@@ -146,6 +161,7 @@ pub struct AppAudioManager {
     device_change: Receiver<bool>,
     monitor: AppMonitor,
     current_pid: Option<Pid>,
+    kill: Option<Sender<bool>>
 }
 
 impl AppAudioManager {
@@ -167,7 +183,7 @@ impl AppAudioManager {
         // Create monitor for opened applications
         let monitor = AppMonitor::new();
 
-        AppAudioManager { current_handle: None, sample_destination, playing, fft_planner, device_change, monitor, current_pid: None }
+        AppAudioManager { current_handle: None, sample_destination, playing, fft_planner, device_change, monitor, current_pid: None, kill: None }
     }
 
     /// Starts the audio stream passing samples to the FFT processor.
@@ -214,25 +230,40 @@ impl AppAudioManager {
         // Communications channel for reviving thread on device change
         let (transmit, device_change): (Sender<bool>, Receiver<bool>) = mpsc::channel();
         self.device_change = device_change;
+        let (kill_transmit, kill_recv): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+        self.kill = Some(kill_transmit);
 
         self.current_handle = Some(thread::Builder::new()
             .name("Capture".to_string())
             .spawn(move || {
-                let mut audio_thread = AudioThread::new(sample_destination, fft_planner, playing, transmit, pid);
+                let mut audio_thread = AudioThread::new(sample_destination, fft_planner, playing, transmit, pid, kill_recv);
                 audio_thread.capture_loop();
             }
         ).unwrap());
     }
 
-    /// Returns the names of all audio producing applications.
-    pub fn opened_applications(&mut self) -> Vec<(String, Pid)> {
-        self.monitor.get_opened_info()
+    /// Returns the names of all audio producing applications without our own app.
+    pub fn opened_applications(&self) -> Vec<(String, Pid)> {
+        self.monitor.get_opened_info().into_iter().filter(|(name, _)| name != "musualiser.exe").collect()
     }
 
-    pub fn update(&mut self, app: (String, Pid)) {
-        self.check_device(app.1);
+    pub fn current_pid(&self) -> Option<Pid> {
+        self.current_pid
+    }
 
-        if Some(app.1) == self.current_pid { return }
+    /// Update the audio manager with the new PID.
+    pub fn update(&mut self, (_, pid): (String, Pid)) {
+        self.check_device(pid);
+
+        if Some(pid) == self.current_pid { return }
+
+        // Kill old thread
+        if let Some(sender) = &self.kill {
+            _ = sender.send(true);
+        }
+
+        // Create new thread
+        self.create_thread(pid);
     }
 }
 
@@ -257,8 +288,6 @@ impl IAudioSessionNotification_Impl for AudioSessionNotification {
         
         // Ensure the PID is not already in the list
         if !self.current_apps.borrow().iter().any(|(_, pid)| pid_find == *pid) {
-            // TODO: Creating this is probably suboptimal but the hope is that this is going to happen very rarely,
-            // whenever a new audio stream is opened
             // Refresh system
             let mut system = System::new();
             let refresh = RefreshKind::new().with_processes(ProcessRefreshKind::everything());
@@ -323,7 +352,7 @@ impl AppMonitor {
         AppMonitor { current_apps, session_manager, notification }
     }
 
-    pub fn get_opened_info(&mut self) -> Vec<(String, Pid)> {
+    pub fn get_opened_info(&self) -> Vec<(String, Pid)> {
         self.current_apps.borrow().clone()
     }
 }

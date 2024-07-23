@@ -14,12 +14,8 @@ impl FftRenderer {
     /// Initialises and creates a new visualisation renderer.
     /// 
     /// # Arguments
-    /// 
-    /// * `glow_context` - Is the OpenGL context.
-    /// 
-    /// * `input_data` - Is the Fourier transformed audio input data receiver.
-    /// 
-    /// * `textures` - Is the texture mapping.
+    ///
+    /// * `samples` - Is the receiver that samples are sent to for the renderer.
     pub fn new(samples: Receiver<Vec<(Complex<f32>, f32)>>) -> Self {
         let current_size = [0.0, 0.0];
         let current_render_data = Vec::new();
