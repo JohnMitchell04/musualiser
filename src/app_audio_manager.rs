@@ -87,7 +87,7 @@ impl AudioThread {
                 let mut temp = Vec::with_capacity(std::cmp::min(sample_queue.len(), (chunk_size - data.len()) * 4));
 
                 // Try to fill the chunk with samples
-                while sample_queue.len() > 0 && temp.len() < temp.capacity() {
+                while !sample_queue.is_empty() && temp.len() < temp.capacity() {
                     temp.push(sample_queue.pop_front().unwrap());
                 }
 

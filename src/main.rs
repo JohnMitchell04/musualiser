@@ -74,7 +74,7 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
             };
 
             // Build list box
-            fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }
+            fn label_function(item: &String) -> Cow<'_, str> { Cow::from(item.as_str()) }
             imgui::ListBox::build_simple(list_box, ui, &mut index, &names, &label_function);
 
             width_specifier.end();
@@ -93,14 +93,14 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
             let mut selected_item = file_audio_manager.selected_song_index();
 
             // Build list box
-            fn label_function<'b>(item: &'b String) -> Cow<'b, str> { Cow::from(item.as_str()) }
+            fn label_function(item: &String) -> Cow<'_, str> { Cow::from(item.as_str()) }
             let window_size = ui.content_region_avail();
             imgui::ListBox::build_simple(list_box, ui, &mut selected_item, &items, &label_function);
 
             width_specifier.end();
 
             // Update the current song
-            if items.len() != 0 {
+            if !items.is_empty() {
                 file_audio_manager.change_current_song(selected_item);
             }
 

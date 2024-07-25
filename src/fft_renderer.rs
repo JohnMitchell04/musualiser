@@ -39,12 +39,9 @@ impl FftRenderer {
         }
 
         // See if there is new data to render
-        match self.samples.try_recv() {
-            Ok(data) => {
-                self.current_render_data = self.preprocess_data(&data);
-                self.current_render_data = self.interpolate_data();        
-            },
-            _ => {}
+        if let Ok(data) = self.samples.try_recv() {
+            self.current_render_data = self.preprocess_data(&data);
+            self.current_render_data = self.interpolate_data();        
         }
 
         // Draw bezier curves for the visualisation
@@ -83,7 +80,7 @@ impl FftRenderer {
     /// # Arguments
     /// 
     /// * `data` - Is the data to process.
-    fn preprocess_data(&self, data: &Vec<(Complex<f32>, f32)>) -> Vec<[f32; 2]> {
+    fn preprocess_data(&self, data: &[(Complex<f32>, f32)]) -> Vec<[f32; 2]> {
         let width = self.current_size[0];
         let height = self.current_size[1];
 
@@ -101,12 +98,12 @@ impl FftRenderer {
                 i += 1;
             }
 
-            averaged_data.push(sum as f32 / i as f32);
+            averaged_data.push(sum / i as f32);
         }
 
         // Normalise data between 0 and 1, scale it to the height of the window and invert for visualisation
         let largest = averaged_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
-        let processed_data: Vec<f32> = averaged_data.iter().map(|x| height - ((x / largest) * height) - 1 as f32).collect();
+        let processed_data: Vec<f32> = averaged_data.iter().map(|x| height - ((x / largest) * height) - 1_f32).collect();
 
         // Get x coords of each point
         let mut x_values = Vec::with_capacity(averaged_data.len());
@@ -151,14 +148,8 @@ impl FftRenderer {
 
             // Add two interpolations between points to smooth the visualisation
             sampled_data.push(set[0]);
-            sampled_data.push([x1, match spline.sample(x1) {
-                Some(value) => value,
-                None => 0.0
-            }]);
-            sampled_data.push([x2, match spline.sample(x2) {
-                Some(value) => value,
-                None => 0.0
-            }]);
+            sampled_data.push([x1, spline.sample(x1).unwrap_or(0.0)]);
+            sampled_data.push([x2, spline.sample(x2).unwrap_or(0.0)]);
             sampled_data.push(set[1]);
         }
         sampled_data.push(*self.current_render_data.last().unwrap());
