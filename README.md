@@ -31,7 +31,8 @@ Ensure your system has OpenGL installed to avoid any rendering issues.
 
 ## Example
 Capturing the audio from Spotify.
-![image](https://github.com/user-attachments/assets/fffa4237-05d2-4f77-9b5d-b437a15d464e)
+![image](https://github.com/user-attachments/assets/2a3e18af-dba3-4d53-b7bf-ab474bd6f77e)
+
 
 
 ## License
