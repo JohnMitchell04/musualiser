@@ -51,6 +51,7 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
         let app_audio = app_audio_manager.is_playing();
         let mut value = app_audio;
         if ui.checkbox("App Audio", &mut value) {
+            file_audio_manager.pause();
             if app_audio {
                 app_audio_manager.stop();
             } else {
@@ -117,16 +118,16 @@ fn application_loop(_: &mut bool, ui: &mut Ui, renderer: &mut FftRenderer, file_
 
                 // Reset the selected song
                 file_audio_manager.change_current_song(0);
-            }   
+            }
+
+            // Pause/Play currently selected song
+            if ui.is_key_pressed(Key::Space) {
+                if !file_audio_manager.is_paused() {
+                    file_audio_manager.pause();
+                } else {
+                    file_audio_manager.play();
+                }
+            }
         }
     });
-
-    // Pause/Play currently selected song
-    if ui.is_key_pressed(Key::Space) {
-        if !file_audio_manager.is_paused() {
-            file_audio_manager.pause();
-        } else {
-            file_audio_manager.play();
-        }
-    }
 }
