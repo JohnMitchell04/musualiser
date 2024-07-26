@@ -137,7 +137,7 @@ impl FileAudioManager {
         self.selected_song_idx
     }
 
-    /// Chnage the currently selected song. Will open and play the new audio.
+    /// Change the currently selected song. Will open and play the new audio.
     /// 
     /// # Arguments
     ///

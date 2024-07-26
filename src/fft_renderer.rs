@@ -101,6 +101,10 @@ impl FftRenderer {
             averaged_data.push(sum / i as f32);
         }
 
+        // Add a chunk of 0 at the start and end to improve visualisation
+        averaged_data.insert(0, 0.0);
+        averaged_data.push(0.0);
+
         // Normalise data between 0 and 1, scale it to the height of the window and invert for visualisation
         let largest = averaged_data.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
         let processed_data: Vec<f32> = averaged_data.iter().map(|x| height - ((x / largest) * height) - 1_f32).collect();
