@@ -29,6 +29,11 @@ cargo run --release
 
 Ensure your system has OpenGL installed to avoid any rendering issues.
 
+## Example
+Capturing the audio from Spotify.
+![image](https://github.com/user-attachments/assets/fffa4237-05d2-4f77-9b5d-b437a15d464e)
+
+
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
