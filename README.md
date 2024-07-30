@@ -6,7 +6,7 @@ Musualiser can be used with audio files on disk by leveraging [rodio](https://gi
 
 
 
-## Learning Outcomes
+## Educational Outcomes
 - **Cross-threaded Rust Applications**: Develop a strong understanding of using mutexes, channels, condvars, and Arc for safe concurrency in Rust.
 - **FFT and Visualization**: Learn how to visualize the frequency spectrum of audio, using FFTs and splines and Bezier curves to smooth visualisation.
 - **Audio Processing**: Gain insights into audio rendering and capturing techniques.
